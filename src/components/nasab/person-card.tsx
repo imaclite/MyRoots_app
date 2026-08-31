@@ -1,6 +1,7 @@
 import { memo, useRef } from "react";
 import { copy } from "@/lib/tree/copy";
 import { formatEvent, fullName, initials } from "@/lib/tree/format";
+import { useHouseHeadLabel } from "@/lib/tree/house-head-label";
 import type { LayoutNode, Person } from "@/lib/tree/types";
 import { cn } from "@/lib/utils";
 import { useMediaUrl } from "@/hooks/use-media-url";
@@ -50,6 +51,7 @@ export const PersonCard = memo(function PersonCard({
   const born = formatEvent(copy.bornAbbr, person.birthDate, person.birthPlace);
   const died = formatEvent(copy.diedAbbr, person.deathDate, person.deathPlace);
   const photo = useMediaUrl(person.photoId);
+  const [houseHeadLabel] = useHouseHeadLabel();
 
   // نتابع بداية اللمسة محليًا داخل البطاقة نفسها (بمعزل عن حالة الأب) حتى نقرر بثقة
   // وبدون أي تأخير هل نفتح ملف الشخص أو نتجاهل الضغطة لأنها كانت سحبًا فعليًا.
@@ -167,7 +169,7 @@ export const PersonCard = memo(function PersonCard({
       </span>
       {person.houseHead ? (
         <span className="absolute inset-x-0 bottom-0 bg-chip py-0.5 text-center text-[10px] font-medium tracking-wide text-cream">
-          {person.familyName || copy.houseHead}
+          {person.familyName || houseHeadLabel}
         </span>
       ) : null}
     </button>
