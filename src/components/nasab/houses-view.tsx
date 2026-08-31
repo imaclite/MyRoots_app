@@ -58,6 +58,8 @@ type DragVisual = {
   width: number;
   targetPersonId: string | null;
   targetHouseId: string | null;
+  blockedPersonId: string | null;
+  blockedHouseId: string | null;
 } | null;
 
 type PendingLink =
@@ -70,12 +72,14 @@ function Mini({
   onPointerDownDrag,
   dimmed,
   highlighted,
+  blocked,
 }: {
   person: Person;
   onPick: (id: string) => void;
   onPointerDownDrag: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
   dimmed: boolean;
   highlighted: boolean;
+  blocked: boolean;
 }) {
   const male = person.gender === "male";
   const born = formatEvent(copy.bornAbbr, person.birthDate, person.birthPlace);
@@ -90,6 +94,7 @@ function Mini({
         male ? "bg-male-fill" : "bg-female-fill",
         dimmed && "opacity-30",
         highlighted && "ring-2 ring-amber-500",
+        blocked && "ring-2 ring-danger",
       )}
       style={{ touchAction: "none" }}
     >
@@ -133,32 +138,54 @@ export function HousesView() {
   const drag = useRef<DragState>(null);
   const [dragVisual, setDragVisual] = useState<DragVisual>(null);
   const [pendingLink, setPendingLink] = useState<PendingLink | null>(null);
+  // رسالة عابرة تشرح للمستخدم *لماذا* رجعت البطاقة مكانها بدل ما ترجع بصمت — تظهر فقط عند
+  // رفض الإفلات لأنه يكوّن حلقة نسب غير منطقية (تسحب جدًا فوق أحد أحفاده مثلاً).
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const dropNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showDropNotice = useCallback((text: string) => {
+    if (dropNoticeTimer.current) clearTimeout(dropNoticeTimer.current);
+    setDropNotice(text);
+    dropNoticeTimer.current = setTimeout(() => setDropNotice(null), 3200);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (dropNoticeTimer.current) clearTimeout(dropNoticeTimer.current);
+    };
+  }, []);
 
   const resolveTargetAt = useCallback(
     (clientX: number, clientY: number, draggedId: string) => {
+      const empty = {
+        targetPersonId: null as string | null,
+        targetHouseId: null as string | null,
+        blockedPersonId: null as string | null,
+        blockedHouseId: null as string | null,
+      };
       const el = document.elementFromPoint(clientX, clientY);
       const personEl = (el as HTMLElement | null)?.closest?.("[data-person-mini-id]") as HTMLElement | null;
       if (personEl) {
         const targetId = personEl.getAttribute("data-person-mini-id");
-        if (targetId && targetId !== draggedId && !hasAncestor(targetId, draggedId, people)) {
-          return { targetPersonId: targetId, targetHouseId: null as string | null };
+        if (targetId && targetId !== draggedId) {
+          // شخص يُنشئ ربطه حلقة نسب غير منطقية (أحد أحفاد الشخص المسحوب) — نرفض لكن نُرجع
+          // الهدف حتى نقدر نوضّح للمستخدم السبب بدل ما ترجع البطاقة بصمت.
+          if (hasAncestor(targetId, draggedId, people)) return { ...empty, blockedPersonId: targetId };
+          return { ...empty, targetPersonId: targetId };
         }
       }
       const houseEl = (el as HTMLElement | null)?.closest?.("[data-house-id]") as HTMLElement | null;
       if (houseEl) {
         const houseId = houseEl.getAttribute("data-house-id");
         const house = houses.find((h) => h.id === houseId);
-        if (house) {
-          const husbandOk = !house.husband || (house.husband.id !== draggedId && !hasAncestor(house.husband.id, draggedId, people));
-          const wifeOk = !house.wife || (house.wife.id !== draggedId && !hasAncestor(house.wife.id, draggedId, people));
-          const isOwnHouse =
-            (house.husband && house.husband.id === draggedId) || (house.wife && house.wife.id === draggedId);
-          if (husbandOk && wifeOk && !isOwnHouse && (house.husband || house.wife)) {
-            return { targetPersonId: null as string | null, targetHouseId: house.id };
-          }
+        const isOwnHouse =
+          !!house && ((house.husband && house.husband.id === draggedId) || (house.wife && house.wife.id === draggedId));
+        if (house && !isOwnHouse && (house.husband || house.wife)) {
+          const husbandCyclic = !!house.husband && hasAncestor(house.husband.id, draggedId, people);
+          const wifeCyclic = !!house.wife && hasAncestor(house.wife.id, draggedId, people);
+          if (husbandCyclic || wifeCyclic) return { ...empty, blockedHouseId: house.id };
+          return { ...empty, targetHouseId: house.id };
         }
       }
-      return { targetPersonId: null as string | null, targetHouseId: null as string | null };
+      return empty;
     },
     [houses, people],
   );
@@ -179,6 +206,8 @@ export function HousesView() {
         width: st.width,
         targetPersonId: target.targetPersonId,
         targetHouseId: target.targetHouseId,
+        blockedPersonId: target.blockedPersonId,
+        blockedHouseId: target.blockedHouseId,
       });
     };
 
@@ -197,6 +226,14 @@ export function HousesView() {
         setPendingLink({ kind: "person", draggedId: st.id, targetId: target.targetPersonId });
       } else if (target.targetHouseId) {
         setPendingLink({ kind: "house", draggedId: st.id, houseId: target.targetHouseId });
+      } else if (target.blockedPersonId || target.blockedHouseId) {
+        const dragged = people[st.id];
+        if (dragged) {
+          const targetName = target.blockedPersonId
+            ? fullName(people[target.blockedPersonId] ?? ({} as Person))
+            : "هذه الأسرة";
+          showDropNotice(`ما يصير: ${targetName} أصلاً من أحفاد ${fullName(dragged)} — ما ينربطون بهذا الاتجاه.`);
+        }
       }
     };
 
@@ -208,7 +245,7 @@ export function HousesView() {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [resolveTargetAt]);
+  }, [resolveTargetAt, people, showDropNotice]);
 
   const handlePointerDownDrag = useCallback((id: string, e: React.PointerEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -291,6 +328,7 @@ export function HousesView() {
               className={cn(
                 "rounded-xl bg-paper p-4 shadow-[var(--shadow-card)] transition",
                 dragVisual?.targetHouseId === house.id && "ring-2 ring-sky-500",
+                dragVisual?.blockedHouseId === house.id && "ring-2 ring-danger",
               )}
             >
               <h2 className="mb-3 text-sm font-semibold text-ink">
@@ -304,6 +342,7 @@ export function HousesView() {
                     onPointerDownDrag={handlePointerDownDrag}
                     dimmed={dragVisual?.id === house.husband.id}
                     highlighted={dragVisual?.targetPersonId === house.husband.id}
+                    blocked={dragVisual?.blockedPersonId === house.husband.id}
                   />
                 ) : null}
                 {house.wife ? (
@@ -313,6 +352,7 @@ export function HousesView() {
                     onPointerDownDrag={handlePointerDownDrag}
                     dimmed={dragVisual?.id === house.wife.id}
                     highlighted={dragVisual?.targetPersonId === house.wife.id}
+                    blocked={dragVisual?.blockedPersonId === house.wife.id}
                   />
                 ) : null}
               </div>
@@ -327,6 +367,7 @@ export function HousesView() {
                       onPointerDownDrag={handlePointerDownDrag}
                       dimmed={dragVisual?.id === c.id}
                       highlighted={dragVisual?.targetPersonId === c.id}
+                      blocked={dragVisual?.blockedPersonId === c.id}
                     />
                   ))}
                 </div>
@@ -335,6 +376,11 @@ export function HousesView() {
           ))}
         </div>
       </div>
+      {dropNotice ? (
+        <div className="pointer-events-none fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-danger px-4 py-2 text-xs font-medium text-cream shadow-[var(--shadow-card)]">
+          {dropNotice}
+        </div>
+      ) : null}
       {dragVisual
         ? (() => {
             const person = people[dragVisual.id];
