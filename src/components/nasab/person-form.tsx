@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { copy } from "@/lib/tree/copy";
 import { COUNTRIES, flagEmoji } from "@/lib/tree/countries";
 import { lineageHint, similarPeople } from "@/lib/tree/graph";
+import { useHouseHeadLabel } from "@/lib/tree/house-head-label";
 import { useTreeStore } from "@/lib/tree/store";
 import type { Person, PersonDraft } from "@/lib/tree/types";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,7 @@ export function PersonForm({
   const set = (patch: Partial<PersonDraft>) => onChange({ ...value, ...patch });
   const people = useTreeStore((s) => s.people);
   const matches = similarPeople(people, value, excludeId);
+  const [houseHeadLabel] = useHouseHeadLabel();
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -117,7 +119,7 @@ export function PersonForm({
           onChange={(e) => set({ houseHead: e.target.checked })}
         />
         <span>
-          <span className="block text-sm font-medium text-ink">{copy.houseHead}</span>
+          <span className="block text-sm font-medium text-ink">{houseHeadLabel}</span>
           <span className="text-xs text-muted">{copy.houseHeadHint}</span>
         </span>
       </label>
