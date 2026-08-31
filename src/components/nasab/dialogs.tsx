@@ -152,6 +152,12 @@ function PersonActionDialog({
         <DialogHeader>
           <DialogTitle>{titles[kind]}</DialogTitle>
         </DialogHeader>
+        <DialogFooter className="mt-0 mb-4 justify-end">
+          <Button onClick={() => void save()}>{kind === "first-person" ? copy.create : copy.save}</Button>
+          <Button variant="outline" onClick={closeDialog}>
+            {copy.cancel}
+          </Button>
+        </DialogFooter>
         <div className="space-y-3">
           <PersonForm
             value={draft}
@@ -170,12 +176,6 @@ function PersonActionDialog({
             existingId={kind === "edit" ? target?.photoId : null}
           />
         </div>
-        <DialogFooter>
-          <Button onClick={() => void save()}>{kind === "first-person" ? copy.create : copy.save}</Button>
-          <Button variant="outline" onClick={closeDialog}>
-            {copy.cancel}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
