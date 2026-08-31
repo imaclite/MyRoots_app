@@ -7,7 +7,7 @@ import { useMediaUrl } from "@/hooks/use-media-url";
 import { Flag } from "./flag";
 import { photoCropStyle, photoFrameClass, photoPadClass } from "./photo-adjust";
 
-type DropZone = "father" | "sibling" | null;
+type DropZone = "father" | "sibling" | "blocked" | null;
 
 type Props = {
   person: Person;
@@ -116,6 +116,7 @@ export const PersonCard = memo(function PersonCard({
         focused && "ring-2 ring-chip",
         dropZone === "father" && "ring-2 ring-amber-500",
         dropZone === "sibling" && "ring-2 ring-sky-500",
+        dropZone === "blocked" && "ring-2 ring-danger",
         isDragging ? "z-50 shadow-[0_18px_36px_-12px_rgba(28,33,28,0.45)] cursor-grabbing" : "cursor-pointer",
       )}
       style={{
