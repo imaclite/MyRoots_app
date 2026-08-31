@@ -1,6 +1,6 @@
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { layoutHourglass } from "@/lib/tree/layout";
+import { layoutFullTree, layoutHourglass } from "@/lib/tree/layout";
 import { useTreeStore } from "@/lib/tree/store";
 import { Button } from "@/components/ui/button";
 import { PersonCard } from "./person-card";
@@ -16,8 +16,12 @@ export function TreeCanvas() {
   const selectedId = useTreeStore((s) => s.selectedId);
   const setSelected = useTreeStore((s) => s.setSelected);
   const openFile = useTreeStore((s) => s.openFile);
+  const [fullView, setFullView] = useState(true);
 
-  const layout = useMemo(() => layoutHourglass(people, focusId), [people, focusId]);
+  const layout = useMemo(
+    () => (fullView ? layoutFullTree(people) : layoutHourglass(people, focusId)),
+    [people, focusId, fullView],
+  );
   const viewportRef = useRef<HTMLDivElement>(null);
   const [tf, setTf] = useState<Transform>({ x: 40, y: 40, k: 1 });
   const tfRef = useRef(tf);
@@ -73,7 +77,7 @@ export function TreeCanvas() {
       ro.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [fit, focusId]);
+  }, [fit, focusId, fullView]);
 
   const zoomAt = (cx: number, cy: number, factor: number) => {
     setTf((prev) => {
@@ -219,6 +223,16 @@ export function TreeCanvas() {
             );
           })}
         </div>
+      </div>
+
+      <div data-ui className="absolute top-4 left-4 z-40 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
+        <Button
+          variant={fullView ? "default" : "outline"}
+          size="sm"
+          onClick={() => setFullView((v) => !v)}
+        >
+          {fullView ? "الشجرة كاملة" : "شخص واحد وأقاربه"}
+        </Button>
       </div>
 
       <div data-ui className="absolute bottom-24 left-4 z-40 flex flex-col gap-1 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
