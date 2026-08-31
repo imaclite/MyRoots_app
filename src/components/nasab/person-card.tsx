@@ -1,367 +1,174 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useRef } from "react";
 import { copy } from "@/lib/tree/copy";
 import { formatEvent, fullName, initials } from "@/lib/tree/format";
-import { housesOf } from "@/lib/tree/graph";
-import { useTreeStore } from "@/lib/tree/store";
-import type { Person } from "@/lib/tree/types";
+import type { LayoutNode, Person } from "@/lib/tree/types";
 import { cn } from "@/lib/utils";
+import { useMediaUrl } from "@/hooks/use-media-url";
 import { Flag } from "./flag";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { photoCropStyle, photoFrameClass, photoPadClass } from "./photo-adjust";
 
-// حد الحركة (بالبكسل) قبل ما نعتبر اللمسة "سحب" بدل "ضغطة عادية" لفتح ملف الشخص —
-// نفس فكرة PersonCard في صفحة الشجرة.
+type DropZone = "father" | "sibling" | null;
+
+type Props = {
+  person: Person;
+  node: LayoutNode;
+  selected: boolean;
+  focused: boolean;
+  onSelect: (id: string) => void;
+  onOpen: (id: string) => void;
+  draggable?: boolean;
+  isDragging?: boolean;
+  dragDX?: number;
+  dragDY?: number;
+  dropZone?: DropZone;
+  onDragPointerDown?: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
+  onDragPointerMove?: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
+  onDragPointerUp?: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
+};
+
+// حد الحركة (بالبكسل على الشاشة) قبل ما نعتبر اللمسة "سحب" بدل "ضغطة عادية" —
+// أي حركة أقل من هذا تُفتح كملف الشخص كالمعتاد.
 const DRAG_CLICK_THRESHOLD = 6;
 
-// هل ancestorId يقع في سلسلة أجداد personId؟ نفس منطق tree-canvas.tsx بالضبط —
-// يمنع ربط شخص كابن لأحد أحفاده (حلقة نسب غير منطقية). مكرَّرة هنا محليًا (بدل
-// استيراد مشترك) حتى لا نلمس ملف tree-canvas.tsx الذي يعمل بشكل صحيح حاليًا.
-function hasAncestor(personId: string, ancestorId: string, people: Record<string, Person>): boolean {
-  const visited = new Set<string>();
-  const queue = [personId];
-  let guard = 0;
-  while (queue.length && guard < 5000) {
-    guard++;
-    const id = queue.shift();
-    if (!id || visited.has(id)) continue;
-    visited.add(id);
-    const p = people[id];
-    if (!p) continue;
-    if (p.fatherId === ancestorId || p.motherId === ancestorId) return true;
-    if (p.fatherId) queue.push(p.fatherId);
-    if (p.motherId) queue.push(p.motherId);
-  }
-  return false;
-}
-
-type DragState = {
-  id: string;
-  startX: number;
-  startY: number;
-  originLeft: number;
-  originTop: number;
-  width: number;
-  moved: boolean;
-} | null;
-
-type DragVisual = {
-  id: string;
-  left: number;
-  top: number;
-  width: number;
-  targetPersonId: string | null;
-  targetHouseId: string | null;
-} | null;
-
-type PendingLink =
-  | { kind: "person"; draggedId: string; targetId: string }
-  | { kind: "house"; draggedId: string; houseId: string };
-
-function Mini({
+export const PersonCard = memo(function PersonCard({
   person,
-  onPick,
-  onPointerDownDrag,
-  dimmed,
-  highlighted,
-}: {
-  person: Person;
-  onPick: (id: string) => void;
-  onPointerDownDrag: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
-  dimmed: boolean;
-  highlighted: boolean;
-}) {
-  const male = person.gender === "male";
+  node,
+  selected,
+  focused,
+  onSelect,
+  onOpen,
+  draggable = false,
+  isDragging = false,
+  dragDX = 0,
+  dragDY = 0,
+  dropZone = null,
+  onDragPointerDown,
+  onDragPointerMove,
+  onDragPointerUp,
+}: Props) {
+  const female = person.gender === "female";
   const born = formatEvent(copy.bornAbbr, person.birthDate, person.birthPlace);
+  const died = formatEvent(copy.diedAbbr, person.deathDate, person.deathPlace);
+  const photo = useMediaUrl(person.photoId);
+
+  // نتابع بداية اللمسة محليًا داخل البطاقة نفسها (بمعزل عن حالة الأب) حتى نقرر بثقة
+  // وبدون أي تأخير هل نفتح ملف الشخص أو نتجاهل الضغطة لأنها كانت سحبًا فعليًا.
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (draggable) {
+      startRef.current = { x: e.clientX, y: e.clientY };
+      suppressClickRef.current = false;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // بعض المتصفحات القديمة قد لا تدعم setPointerCapture — نتجاهل بأمان.
+      }
+      onDragPointerDown?.(person.id, e);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!draggable || !startRef.current) return;
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (Math.hypot(dx, dy) > DRAG_CLICK_THRESHOLD) suppressClickRef.current = true;
+    onDragPointerMove?.(person.id, e);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (draggable && startRef.current) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // نفس الملاحظة أعلاه.
+      }
+      onDragPointerUp?.(person.id, e);
+    }
+    startRef.current = null;
+  };
+
+  const open = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onSelect(person.id);
+    onOpen(person.id);
+  };
+
   return (
     <button
       type="button"
-      data-person-mini-id={person.id}
-      onPointerDown={(e) => onPointerDownDrag(person.id, e)}
-      onClick={() => onPick(person.id)}
+      data-person-id={person.id}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onClick={open}
       className={cn(
-        "person-card flex w-full items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-right transition",
-        male ? "bg-male-fill" : "bg-female-fill",
-        dimmed && "opacity-30",
-        highlighted && "ring-2 ring-amber-500",
+        "person-card absolute overflow-hidden rounded-lg text-right outline-none",
+        female ? "bg-female-fill" : "bg-male-fill",
+        selected && "ring-2 ring-chip/70",
+        focused && "ring-2 ring-chip",
+        dropZone === "father" && "ring-2 ring-amber-500",
+        dropZone === "sibling" && "ring-2 ring-sky-500",
+        isDragging ? "z-50 shadow-[0_18px_36px_-12px_rgba(28,33,28,0.45)] cursor-grabbing" : "cursor-pointer",
       )}
-      style={{ touchAction: "none" }}
+      style={{
+        left: node.x + (isDragging ? dragDX : 0),
+        top: node.y + (isDragging ? dragDY : 0),
+        width: node.w,
+        height: node.h,
+        touchAction: draggable ? "none" : undefined,
+        transition: isDragging ? "none" : "left 160ms ease-out, top 160ms ease-out, box-shadow 120ms ease-out",
+      }}
     >
       <span
+        className={cn("absolute inset-y-0 right-0 w-1.5", female ? "bg-female" : "bg-male")}
+        aria-hidden
+      />
+      <span
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-cream",
-          male ? "bg-male" : "bg-female",
+          "absolute top-2.5 right-3.5 overflow-hidden rounded-md text-xs font-semibold text-cream",
+          photoFrameClass(person.photoSize),
+          female ? "bg-female" : "bg-male",
         )}
       >
-        {initials(person)}
+        {photo ? (
+          <img
+            src={photo}
+            alt=""
+            className="object-cover"
+            style={photoCropStyle(person.photoScale || 1, person.photoX, person.photoY)}
+          />
+        ) : (
+          <span className="flex size-full items-center justify-center">{initials(person)}</span>
+        )}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
+      <span className={cn("block h-full px-3 py-2.5 pl-3", photoPadClass(person.photoSize), person.houseHead && "pb-7")}>
+        {node.caption ? (
+          <span className="mb-0.5 block truncate text-[10px] font-medium text-muted">{node.caption}</span>
+        ) : null}
+        <span className="flex min-w-0 items-center gap-1.5">
           <Flag code={person.countryCode} />
           <span className="truncate text-sm font-semibold text-ink">{fullName(person)}</span>
         </span>
-        {born ? <span className="block truncate text-xs text-muted">{born}</span> : null}
+        {born ? (
+          <span className="mt-0.5 block truncate text-xs leading-5 text-muted">{born}</span>
+        ) : null}
+        {died ? (
+          <span className="block truncate text-xs leading-5 text-muted">{died}</span>
+        ) : null}
       </span>
+      {person.houseHead ? (
+        <span className="absolute inset-x-0 bottom-0 bg-chip py-0.5 text-center text-[10px] font-medium tracking-wide text-cream">
+          {person.familyName || copy.houseHead}
+        </span>
+      ) : null}
     </button>
   );
-}
-
-export function HousesView() {
-  const people = useTreeStore((s) => s.people);
-  const openFile = useTreeStore((s) => s.openFile);
-  const linkExistingParent = useTreeStore((s) => s.linkExistingParent);
-  const houses = housesOf(people);
-
-  const justDraggedRef = useRef(false);
-  const pick = useCallback(
-    (id: string) => {
-      if (justDraggedRef.current) {
-        justDraggedRef.current = false;
-        return;
-      }
-      openFile(id);
-    },
-    [openFile],
-  );
-
-  const drag = useRef<DragState>(null);
-  const [dragVisual, setDragVisual] = useState<DragVisual>(null);
-  const [pendingLink, setPendingLink] = useState<PendingLink | null>(null);
-
-  const resolveTargetAt = useCallback(
-    (clientX: number, clientY: number, draggedId: string) => {
-      const el = document.elementFromPoint(clientX, clientY);
-      const personEl = (el as HTMLElement | null)?.closest?.("[data-person-mini-id]") as HTMLElement | null;
-      if (personEl) {
-        const targetId = personEl.getAttribute("data-person-mini-id");
-        if (targetId && targetId !== draggedId && !hasAncestor(targetId, draggedId, people)) {
-          return { targetPersonId: targetId, targetHouseId: null as string | null };
-        }
-      }
-      const houseEl = (el as HTMLElement | null)?.closest?.("[data-house-id]") as HTMLElement | null;
-      if (houseEl) {
-        const houseId = houseEl.getAttribute("data-house-id");
-        const house = houses.find((h) => h.id === houseId);
-        if (house) {
-          const husbandOk = !house.husband || (house.husband.id !== draggedId && !hasAncestor(house.husband.id, draggedId, people));
-          const wifeOk = !house.wife || (house.wife.id !== draggedId && !hasAncestor(house.wife.id, draggedId, people));
-          const isOwnHouse =
-            (house.husband && house.husband.id === draggedId) || (house.wife && house.wife.id === draggedId);
-          if (husbandOk && wifeOk && !isOwnHouse && (house.husband || house.wife)) {
-            return { targetPersonId: null as string | null, targetHouseId: house.id };
-          }
-        }
-      }
-      return { targetPersonId: null as string | null, targetHouseId: null as string | null };
-    },
-    [houses, people],
-  );
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const st = drag.current;
-      if (!st) return;
-      const dx = e.clientX - st.startX;
-      const dy = e.clientY - st.startY;
-      if (!st.moved && Math.hypot(dx, dy) > DRAG_CLICK_THRESHOLD) st.moved = true;
-      if (!st.moved) return;
-      const target = resolveTargetAt(e.clientX, e.clientY, st.id);
-      setDragVisual({
-        id: st.id,
-        left: st.originLeft + dx,
-        top: st.originTop + dy,
-        width: st.width,
-        targetPersonId: target.targetPersonId,
-        targetHouseId: target.targetHouseId,
-      });
-    };
-
-    const onUp = (e: PointerEvent) => {
-      const st = drag.current;
-      drag.current = null;
-      if (!st) return;
-      if (!st.moved) {
-        setDragVisual(null);
-        return;
-      }
-      justDraggedRef.current = true;
-      const target = resolveTargetAt(e.clientX, e.clientY, st.id);
-      setDragVisual(null);
-      if (target.targetPersonId) {
-        setPendingLink({ kind: "person", draggedId: st.id, targetId: target.targetPersonId });
-      } else if (target.targetHouseId) {
-        setPendingLink({ kind: "house", draggedId: st.id, houseId: target.targetHouseId });
-      }
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-  }, [resolveTargetAt]);
-
-  const handlePointerDownDrag = useCallback((id: string, e: React.PointerEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    drag.current = {
-      id,
-      startX: e.clientX,
-      startY: e.clientY,
-      originLeft: rect.left,
-      originTop: rect.top,
-      width: rect.width,
-      moved: false,
-    };
-  }, []);
-
-  const cancelLink = useCallback(() => setPendingLink(null), []);
-
-  const confirmLink = useCallback(() => {
-    if (!pendingLink) return;
-    if (pendingLink.kind === "person") {
-      const target = people[pendingLink.targetId];
-      const which = target?.gender === "female" ? "mother" : "father";
-      linkExistingParent(pendingLink.draggedId, pendingLink.targetId, which);
-    } else {
-      const house = houses.find((h) => h.id === pendingLink.houseId);
-      if (house?.husband) linkExistingParent(pendingLink.draggedId, house.husband.id, "father");
-      if (house?.wife) linkExistingParent(pendingLink.draggedId, house.wife.id, "mother");
-    }
-    setPendingLink(null);
-  }, [pendingLink, people, houses, linkExistingParent]);
-
-  const linkMessage = useMemo(() => {
-    if (!pendingLink) return "";
-    const dragged = people[pendingLink.draggedId];
-    if (!dragged) return "";
-    if (pendingLink.kind === "person") {
-      const target = people[pendingLink.targetId];
-      if (!target) return "";
-      const role = dragged.gender === "female" ? "ابنة" : "ابنًا";
-      return `سيصبح ${fullName(dragged)} ${role} لـ ${fullName(target)}. متابعة؟`;
-    }
-    const house = houses.find((h) => h.id === pendingLink.houseId);
-    const parents = [house?.husband, house?.wife].filter(Boolean).map((p) => fullName(p as Person)).join(" و ");
-    return `سيصبح ${fullName(dragged)} من أبناء ${parents || "هذه الأسرة"}. متابعة؟`;
-  }, [pendingLink, people, houses]);
-
-  const linkDialog = (
-    <Dialog open={Boolean(pendingLink)} onOpenChange={(o) => !o && cancelLink()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>تأكيد تغيير القرابة</DialogTitle>
-          <DialogDescription>{linkMessage}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={cancelLink}>
-            إلغاء
-          </Button>
-          <Button onClick={confirmLink}>تأكيد</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-
-  if (!houses.length) {
-    return (
-      <div className="flex h-full items-center justify-center p-8 text-sm text-muted">{copy.noHouses}</div>
-    );
-  }
-
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-5xl p-4">
-        <p className="mb-3 text-xs text-muted">
-          اسحب أي شخص وأفلته فوق شخص آخر ليصبح ابنًا/ابنة له، أو أفلته داخل بطاقة عائلة ليصبح من أبنائها.
-        </p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {houses.map((house) => (
-            <article
-              key={house.id}
-              data-house-id={house.id}
-              className={cn(
-                "rounded-xl bg-paper p-4 shadow-[var(--shadow-card)] transition",
-                dragVisual?.targetHouseId === house.id && "ring-2 ring-sky-500",
-              )}
-            >
-              <h2 className="mb-3 text-sm font-semibold text-ink">
-                {copy.houseOf} {[house.husband, house.wife].filter(Boolean).map((p) => p!.givenName).join(" و ")}
-              </h2>
-              <div className="space-y-2">
-                {house.husband ? (
-                  <Mini
-                    person={house.husband}
-                    onPick={pick}
-                    onPointerDownDrag={handlePointerDownDrag}
-                    dimmed={dragVisual?.id === house.husband.id}
-                    highlighted={dragVisual?.targetPersonId === house.husband.id}
-                  />
-                ) : null}
-                {house.wife ? (
-                  <Mini
-                    person={house.wife}
-                    onPick={pick}
-                    onPointerDownDrag={handlePointerDownDrag}
-                    dimmed={dragVisual?.id === house.wife.id}
-                    highlighted={dragVisual?.targetPersonId === house.wife.id}
-                  />
-                ) : null}
-              </div>
-              {house.children.length ? (
-                <div className="mt-3 space-y-2 border-t border-ink/8 pt-3">
-                  <p className="text-xs font-medium text-muted">{copy.children}</p>
-                  {house.children.map((c) => (
-                    <Mini
-                      key={c.id}
-                      person={c}
-                      onPick={pick}
-                      onPointerDownDrag={handlePointerDownDrag}
-                      dimmed={dragVisual?.id === c.id}
-                      highlighted={dragVisual?.targetPersonId === c.id}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </div>
-      {dragVisual
-        ? (() => {
-            const person = people[dragVisual.id];
-            if (!person) return null;
-            const male = person.gender === "male";
-            return (
-              <div
-                className={cn(
-                  "person-card pointer-events-none fixed z-50 flex items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-right shadow-[0_18px_36px_-12px_rgba(28,33,28,0.45)]",
-                  male ? "bg-male-fill" : "bg-female-fill",
-                )}
-                style={{ left: dragVisual.left, top: dragVisual.top, width: dragVisual.width }}
-              >
-                <span
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-cream",
-                    male ? "bg-male" : "bg-female",
-                  )}
-                >
-                  {initials(person)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{fullName(person)}</span>
-              </div>
-            );
-          })()
-        : null}
-      {linkDialog}
-    </div>
-  );
-}
+});
