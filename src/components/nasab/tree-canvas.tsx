@@ -2,13 +2,20 @@ import { Maximize2, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { layoutFullTree, layoutHourglass } from "@/lib/tree/layout";
 import { useTreeStore } from "@/lib/tree/store";
+import { spouseIdList } from "@/lib/tree/types";
 import { Button } from "@/components/ui/button";
 import { PersonCard } from "./person-card";
 
 type Transform = { x: number; y: number; k: number };
+type Mode = "index" | "family" | "focus";
 
 const MIN_K = 0.28;
 const MAX_K = 2.4;
+// عدد الأشخاص الأدنى ليُعتبر اسم العائلة "فرعًا كبيرًا" له بطاقة خاصة في القائمة —
+// هذا يستبعد تلقائيًا أسماء عائلات الزوجات اللي تزوجن للعائلة (زوجة واحدة = شخص واحد بعائلتها
+// الأصلية)، ويُبقي فقط الفروع الحقيقية. لما تكتمل قراءة فروع مثل "الموسى"/"الرشيد"/"الطيب" من
+// الملصق الأصلي وتكبر بياناتها، بطاقاتها راح تظهر تلقائيًا هنا بدون أي تعديل كود.
+const MIN_FAMILY_SIZE = 5;
 
 export function TreeCanvas() {
   const people = useTreeStore((s) => s.people);
@@ -16,12 +23,59 @@ export function TreeCanvas() {
   const selectedId = useTreeStore((s) => s.selectedId);
   const setSelected = useTreeStore((s) => s.setSelected);
   const openFile = useTreeStore((s) => s.openFile);
-  const [fullView, setFullView] = useState(true);
 
-  const layout = useMemo(
-    () => (fullView ? layoutFullTree(people) : layoutHourglass(people, focusId)),
-    [people, focusId, fullView],
-  );
+  const [mode, setMode] = useState<Mode>("index");
+  const [selectedFamily, setSelectedFamily] = useState<string | null>(null);
+
+  const totalCount = Object.keys(people).length;
+  const familyGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of Object.values(people)) {
+      const fam = (p.familyName || "").trim();
+      if (!fam) continue;
+      counts.set(fam, (counts.get(fam) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .filter(([, count]) => count >= MIN_FAMILY_SIZE)
+      .sort((a, b) => b[1] - a[1]);
+  }, [people]);
+
+  // كل مرة يتغيّر فيها الشخص "المركَّز عليه" أثناء وجودنا فعلاً على تبويب الشجرة (مثلاً زر
+  // "التركيز" أسفل الشاشة) ننتقل تلقائيًا لعرض هذا الشخص وأقاربه، بدون التأثير على أول فتح للتبويب.
+  const mountedRef = useRef(false);
+  const prevFocusIdRef = useRef(focusId);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      prevFocusIdRef.current = focusId;
+      return;
+    }
+    if (focusId && focusId !== prevFocusIdRef.current) {
+      setMode("focus");
+    }
+    prevFocusIdRef.current = focusId;
+  }, [focusId]);
+
+  const filteredPeople = useMemo(() => {
+    if (mode !== "family" || !selectedFamily) return people;
+    const inFamily = Object.values(people).filter((p) => (p.familyName || "").trim() === selectedFamily);
+    const idSet = new Set(inFamily.map((p) => p.id));
+    for (const p of inFamily) {
+      for (const sid of spouseIdList(p)) idSet.add(sid);
+    }
+    const out: typeof people = {};
+    for (const id of idSet) {
+      const person = people[id];
+      if (person) out[id] = person;
+    }
+    return out;
+  }, [people, mode, selectedFamily]);
+
+  const layout = useMemo(() => {
+    if (mode === "index") return { nodes: [], edges: [], bbox: { x: 0, y: 0, w: 800, h: 600 } };
+    if (mode === "focus") return layoutHourglass(people, focusId);
+    return layoutFullTree(filteredPeople);
+  }, [people, focusId, mode, filteredPeople]);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [tf, setTf] = useState<Transform>({ x: 40, y: 40, k: 1 });
   const tfRef = useRef(tf);
@@ -77,7 +131,7 @@ export function TreeCanvas() {
       ro.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [fit, focusId, fullView]);
+  }, [fit, focusId, mode, selectedFamily]);
 
   const zoomAt = (cx: number, cy: number, factor: number) => {
     setTf((prev) => {
@@ -171,6 +225,44 @@ export function TreeCanvas() {
     return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
   };
 
+  if (mode === "index") {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-3xl p-4">
+          <h2 className="mb-1 text-lg font-semibold text-ink">عائلات الشجرة</h2>
+          <p className="mb-4 text-sm text-muted">اختر عائلة لتصفّح شجرتها فقط، أو افتح الشجرة كاملة من هنا.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFamily(null);
+                setMode("family");
+              }}
+              className="rounded-xl bg-chip p-4 text-right text-cream shadow-[var(--shadow-card)] transition hover:bg-ink"
+            >
+              <span className="block text-base font-semibold">الشجرة كاملة</span>
+              <span className="block text-xs text-cream/80">كل الأشخاص المسجّلين ({totalCount})</span>
+            </button>
+            {familyGroups.map(([name, count]) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => {
+                  setSelectedFamily(name);
+                  setMode("family");
+                }}
+                className="rounded-xl bg-paper p-4 text-right shadow-[var(--shadow-card)] transition hover:bg-cream-deep/50"
+              >
+                <span className="block text-base font-semibold text-ink">آل {name}</span>
+                <span className="block text-xs text-muted">{count} شخصًا</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-full min-h-0 w-full">
       <div
@@ -225,14 +317,20 @@ export function TreeCanvas() {
         </div>
       </div>
 
-      <div data-ui className="absolute top-4 left-4 z-40 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
+      <div data-ui className="absolute top-4 left-4 z-40 flex items-center gap-2 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
         <Button
-          variant={fullView ? "default" : "outline"}
+          variant="outline"
           size="sm"
-          onClick={() => setFullView((v) => !v)}
+          onClick={() => {
+            setMode("index");
+            setSelectedFamily(null);
+          }}
         >
-          {fullView ? "الشجرة كاملة" : "شخص واحد وأقاربه"}
+          كل العائلات
         </Button>
+        <span className="hidden max-w-40 truncate px-1 text-xs font-medium text-ink-soft sm:block">
+          {mode === "focus" ? "شخص واحد وأقاربه" : selectedFamily ? `آل ${selectedFamily}` : "الشجرة كاملة"}
+        </span>
       </div>
 
       <div data-ui className="absolute bottom-24 left-4 z-40 flex flex-col gap-1 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
