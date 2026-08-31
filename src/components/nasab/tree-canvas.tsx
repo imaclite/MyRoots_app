@@ -40,6 +40,26 @@ export function TreeCanvas() {
       .sort((a, b) => b[1] - a[1]);
   }, [people]);
 
+  // الدخول لأي عرض غير قائمة العوائل (شجرة كاملة/عائلة/التركيز على شخص) "تنقّل داخلي" —
+  // نسجّله في تاريخ المتصفح حتى يكون لزر الرجوع بالجوال/المتصفح مكان يرجع له غير الخروج من
+  // التطبيق كليًا. زر "كل العائلات" وزر رجوع الجهاز يستدعيان نفس السلوك (history.back()).
+  const pushNav = useCallback(() => {
+    try {
+      window.history.pushState({ nasabTreeNav: true }, "");
+    } catch {
+      // بعض البيئات (مثل المعاينة داخل إطار iframe) قد تمنع history API — نتجاهل الخطأ بأمان.
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setMode("index");
+      setSelectedFamily(null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   // كل مرة يتغيّر فيها الشخص "المركَّز عليه" أثناء وجودنا فعلاً على تبويب الشجرة (مثلاً زر
   // "التركيز" أسفل الشاشة) ننتقل تلقائيًا لعرض هذا الشخص وأقاربه، بدون التأثير على أول فتح للتبويب.
   const mountedRef = useRef(false);
@@ -51,10 +71,11 @@ export function TreeCanvas() {
       return;
     }
     if (focusId && focusId !== prevFocusIdRef.current) {
+      pushNav();
       setMode("focus");
     }
     prevFocusIdRef.current = focusId;
-  }, [focusId]);
+  }, [focusId, pushNav]);
 
   const filteredPeople = useMemo(() => {
     if (mode !== "family" || !selectedFamily) return people;
@@ -153,7 +174,9 @@ export function TreeCanvas() {
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+    // نعيد ربط المستمع كل ما تغيّر العرض (mode/selectedFamily)، لأن عنصر الـ viewport نفسه
+    // يُعاد إنشاؤه من الصفر (لا يوجد أصلاً وقت قائمة العوائل)، وإلا يتوقف تكبير السركول.
+  }, [mode, selectedFamily]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     const el = viewportRef.current;
@@ -235,6 +258,7 @@ export function TreeCanvas() {
             <button
               type="button"
               onClick={() => {
+                pushNav();
                 setSelectedFamily(null);
                 setMode("family");
               }}
@@ -248,6 +272,7 @@ export function TreeCanvas() {
                 key={name}
                 type="button"
                 onClick={() => {
+                  pushNav();
                   setSelectedFamily(name);
                   setMode("family");
                 }}
@@ -322,8 +347,7 @@ export function TreeCanvas() {
           variant="outline"
           size="sm"
           onClick={() => {
-            setMode("index");
-            setSelectedFamily(null);
+            window.history.back();
           }}
         >
           كل العائلات
