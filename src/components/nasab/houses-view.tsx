@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copy } from "@/lib/tree/copy";
 import { formatEvent, fullName, initials } from "@/lib/tree/format";
-import { housesOf } from "@/lib/tree/graph";
+import { housesOf, type House } from "@/lib/tree/graph";
+import { useHouseHeadLabel } from "@/lib/tree/house-head-label";
 import { useTreeStore } from "@/lib/tree/store";
 import type { Person } from "@/lib/tree/types";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,13 @@ import {
 // حد الحركة (بالبكسل) قبل ما نعتبر اللمسة "سحب" بدل "ضغطة عادية" لفتح ملف الشخص —
 // نفس فكرة PersonCard في صفحة الشجرة.
 const DRAG_CLICK_THRESHOLD = 6;
+
+// نفس فكرة "إضافة/إزالة عائلة" في صفحة الشجرة، لكن هنا لكل بيت (زوجين) على حدة: افتراضيًا
+// يظهر فقط بيت مُعلَّم صاحبه أو زوجته بعلامة "رأس بيت" (الحقل houseHead في ملف الشخص) — هذا
+// يمنع ظهور كل زوجين في البيانات (قد يكونون عشرات) كبطاقة بيت مستقلة. المستخدم يقدر يظهر أي
+// بيت آخر يدويًا، أو يخفي بيت رأس ظاهر افتراضيًا، ويُحفظ اختياره في هذا الجهاز.
+const MANUAL_HOUSES_KEY = "nasab.manualHouses";
+const HIDDEN_HOUSES_KEY = "nasab.hiddenHouses";
 
 // هل ancestorId يقع في سلسلة أجداد personId؟ نفس منطق tree-canvas.tsx بالضبط —
 // يمنع ربط شخص كابن لأحد أحفاده (حلقة نسب غير منطقية). مكرَّرة هنا محليًا (بدل
@@ -122,6 +130,83 @@ export function HousesView() {
   const openFile = useTreeStore((s) => s.openFile);
   const linkExistingParent = useTreeStore((s) => s.linkExistingParent);
   const houses = housesOf(people);
+  const [houseHeadLabel, setHouseHeadLabelValue] = useHouseHeadLabel();
+
+  // --- تحديد أي البيوت تظهر كبطاقات في هذه الصفحة (بدل عرض كل زوجين تلقائيًا) --------------
+  const [manualHouses, setManualHouses] = useState<string[]>([]);
+  const [hiddenHouses, setHiddenHouses] = useState<string[]>([]);
+  const [manageHousesOpen, setManageHousesOpen] = useState(false);
+  const [houseSearch, setHouseSearch] = useState("");
+  const [houseHeadLabelDraft, setHouseHeadLabelDraft] = useState(houseHeadLabel);
+
+  useEffect(() => setHouseHeadLabelDraft(houseHeadLabel), [houseHeadLabel]);
+
+  useEffect(() => {
+    try {
+      const m = localStorage.getItem(MANUAL_HOUSES_KEY);
+      const h = localStorage.getItem(HIDDEN_HOUSES_KEY);
+      if (m) setManualHouses(JSON.parse(m));
+      if (h) setHiddenHouses(JSON.parse(h));
+    } catch {
+      // تخزين المتصفح قد يكون غير متاح في بعض البيئات — نتجاهل بأمان.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(MANUAL_HOUSES_KEY, JSON.stringify(manualHouses));
+    } catch {
+      // نفس الملاحظة أعلاه.
+    }
+  }, [manualHouses]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDDEN_HOUSES_KEY, JSON.stringify(hiddenHouses));
+    } catch {
+      // نفس الملاحظة أعلاه.
+    }
+  }, [hiddenHouses]);
+
+  const houseLabel = useCallback(
+    (house: House) => [house.husband, house.wife].filter(Boolean).map((p) => fullName(p as Person)).join(" و "),
+    [],
+  );
+
+  const isHouseVisible = useCallback(
+    (house: House) => {
+      if (hiddenHouses.includes(house.id)) return false;
+      if (manualHouses.includes(house.id)) return true;
+      return Boolean(house.husband?.houseHead || house.wife?.houseHead);
+    },
+    [hiddenHouses, manualHouses],
+  );
+
+  const toggleHouse = useCallback(
+    (house: House) => {
+      if (isHouseVisible(house)) {
+        if (manualHouses.includes(house.id)) {
+          setManualHouses((prev) => prev.filter((id) => id !== house.id));
+        } else {
+          setHiddenHouses((prev) => [...prev, house.id]);
+        }
+      } else {
+        if (hiddenHouses.includes(house.id)) {
+          setHiddenHouses((prev) => prev.filter((id) => id !== house.id));
+        } else {
+          setManualHouses((prev) => [...prev, house.id]);
+        }
+      }
+    },
+    [isHouseVisible, manualHouses, hiddenHouses],
+  );
+
+  const visibleHouses = useMemo(() => houses.filter(isHouseVisible), [houses, isHouseVisible]);
+  const otherHouses = useMemo(() => {
+    const q = houseSearch.trim();
+    return houses
+      .filter((h) => !isHouseVisible(h))
+      .filter((h) => !q || houseLabel(h).includes(q));
+  }, [houses, isHouseVisible, houseSearch, houseLabel]);
+  // -------------------------------------------------------------------------------------------
 
   const justDraggedRef = useRef(false);
   const pick = useCallback(
@@ -308,6 +393,92 @@ export function HousesView() {
     </Dialog>
   );
 
+  const manageHousesDialog = (
+    <Dialog open={manageHousesOpen} onOpenChange={setManageHousesOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>تحديد البيوت الظاهرة</DialogTitle>
+          <DialogDescription>
+            افتراضيًا يظهر فقط بيت الشخص المُعلَّم بـ「{houseHeadLabel}」من ملف الشخص. أظهر أي بيت آخر يدويًا من
+            هنا، أو أخفِ بيتًا ظاهرًا حاليًا.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="mb-4 space-y-1.5 rounded-lg bg-cream-deep/40 p-3">
+          <label htmlFor="house-head-label-input" className="block text-xs font-medium text-muted">
+            مصطلح "رأس البيت" (يظهر في ملف الشخص وعلى بطاقته)
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="house-head-label-input"
+              type="text"
+              value={houseHeadLabelDraft}
+              onChange={(e) => setHouseHeadLabelDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  setHouseHeadLabelValue(houseHeadLabelDraft);
+                }
+              }}
+              placeholder="مثال: رب الأسرة، الجد الأول..."
+              className="h-10 flex-1 rounded-lg border border-ink/10 bg-cream px-3 text-sm text-ink outline-none focus:border-chip"
+            />
+            <Button size="sm" onClick={() => setHouseHeadLabelValue(houseHeadLabelDraft)}>
+              حفظ
+            </Button>
+          </div>
+        </div>
+
+        <p className="mb-1.5 text-xs font-medium text-muted">البيوت الظاهرة حاليًا ({visibleHouses.length})</p>
+        <div className="mb-3 max-h-48 space-y-1 overflow-y-auto">
+          {visibleHouses.map((house) => (
+            <div key={house.id} className="flex items-center justify-between gap-2 rounded-lg bg-chip/10 px-3 py-2 text-sm text-ink">
+              <span className="truncate">{houseLabel(house) || "بلا اسم"}</span>
+              <button
+                type="button"
+                onClick={() => toggleHouse(house)}
+                className="shrink-0 text-xs font-medium text-danger hover:underline"
+              >
+                إخفاء
+              </button>
+            </div>
+          ))}
+          {visibleHouses.length === 0 ? (
+            <p className="px-1 py-3 text-center text-xs text-muted">لا توجد بيوت ظاهرة حاليًا.</p>
+          ) : null}
+        </div>
+
+        <div className="border-t border-ink/10 pt-3">
+          <input
+            type="text"
+            value={houseSearch}
+            onChange={(e) => setHouseSearch(e.target.value)}
+            placeholder="ابحث عن بيت بالاسم لإظهاره..."
+            className="mb-2 h-10 w-full rounded-lg border border-ink/10 bg-cream px-3 text-sm text-ink outline-none focus:border-chip"
+          />
+          <div className="max-h-48 space-y-1 overflow-y-auto">
+            {otherHouses.map((house) => (
+              <button
+                key={house.id}
+                type="button"
+                onClick={() => toggleHouse(house)}
+                className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-right text-xs text-muted transition hover:bg-cream-deep/50"
+              >
+                <span className="truncate">{houseLabel(house) || "بلا اسم"}</span>
+                <span className="shrink-0 font-medium text-chip">+ إظهار</span>
+              </button>
+            ))}
+            {otherHouses.length === 0 ? <p className="px-1 py-3 text-center text-xs text-muted">لا نتائج.</p> : null}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={() => setManageHousesOpen(false)}>تم</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (!houses.length) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-sm text-muted">{copy.noHouses}</div>
@@ -317,11 +488,29 @@ export function HousesView() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl p-4">
-        <p className="mb-3 text-xs text-muted">
-          اسحب أي شخص وأفلته فوق شخص آخر ليصبح ابنًا/ابنة له، أو أفلته داخل بطاقة عائلة ليصبح من أبنائها.
-        </p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted">
+            اسحب أي شخص وأفلته فوق شخص آخر ليصبح ابنًا/ابنة له، أو أفلته داخل بطاقة عائلة ليصبح من أبنائها.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setManageHousesOpen(true)}>
+            + تحديد البيوت الظاهرة
+          </Button>
+        </div>
+        {visibleHouses.length === 0 ? (
+          <div className="rounded-xl bg-paper p-6 text-center text-sm text-muted shadow-[var(--shadow-card)]">
+            لا توجد بيوت ظاهرة حاليًا. علّم شخصًا بـ「{houseHeadLabel}」من ملفه، أو{" "}
+            <button
+              type="button"
+              onClick={() => setManageHousesOpen(true)}
+              className="font-medium text-chip hover:underline"
+            >
+              أظهر بيتًا يدويًا من هنا
+            </button>
+            .
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {houses.map((house) => (
+          {visibleHouses.map((house) => (
             <article
               key={house.id}
               data-house-id={house.id}
@@ -375,6 +564,7 @@ export function HousesView() {
             </article>
           ))}
         </div>
+        )}
       </div>
       {dropNotice ? (
         <div className="pointer-events-none fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-danger px-4 py-2 text-xs font-medium text-cream shadow-[var(--shadow-card)]">
@@ -408,6 +598,7 @@ export function HousesView() {
           })()
         : null}
       {linkDialog}
+      {manageHousesDialog}
     </div>
   );
 }
