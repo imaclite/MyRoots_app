@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>نموذج تعبئة بيانات — نسب</title>
+    <style>
+      :root {
+        --cream: #f4efe4;
+        --paper: #fbf7ef;
+        --ink: #1c211c;
+        --muted: #6b6458;
+        --chip: #1e2a32;
+        --male: #1e3a5f;
+        --female: #8b3d56;
+        --line: rgba(28, 33, 28, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Arabic Typesetting", "Noto Naskh Arabic", "Geeza Pro", serif;
+        background: var(--cream);
+        color: var(--ink);
+        line-height: 1.55;
+      }
+      .page {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 24px 16px 80px;
+      }
+      header.hero {
+        background: var(--paper);
+        border-radius: 20px;
+        padding: 22px 22px 16px;
+        box-shadow: 0 0 0 1px var(--line);
+      }
+      h1 { margin: 0; font-size: 1.6rem; }
+      .sub { color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      button, .linkbtn {
+        font: inherit;
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 16px;
+        cursor: pointer;
+        background: var(--chip);
+        color: #fbf7ef;
+      }
+      button.ghost { background: transparent; color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+      section {
+        margin-top: 18px;
+        background: var(--paper);
+        border-radius: 18px;
+        padding: 16px 16px 8px;
+        box-shadow: 0 0 0 1px var(--line);
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 1.05rem;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+      .full { grid-column: 1 / -1; }
+      label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+      input, textarea, select {
+        width: 100%;
+        font: inherit;
+        font-size: 1rem;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+      textarea { min-height: 72px; resize: vertical; }
+      .checks { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+      .checks label { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; color: var(--ink); margin: 0; }
+      .checks input { width: auto; }
+      .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+      .hint { font-size: 0.8rem; color: var(--muted); margin: 0 0 10px; }
+      .wife { border: 1px dashed var(--line); border-radius: 14px; padding: 10px; margin-bottom: 10px; }
+      .badge { display: inline-block; background: var(--cream); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; }
+      footer.note { margin-top: 18px; color: var(--muted); font-size: 0.85rem; }
+      @media (max-width: 700px) {
+        .grid, .row3 { grid-template-columns: 1fr; }
+      }
+      @media print {
+        body { background: #fff; }
+        .actions { display: none; }
+        section, header.hero { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+        input, textarea, select { border: 0; border-bottom: 1px solid #bbb; border-radius: 0; background: transparent; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <h1>نموذج تعبئة بيانات الأسرة — نسب</h1>
+        <p class="sub">
+          أرسل هذه الورقة أو الملف لفرد العائلة. يعبّئ ما يعرفه ويرجعها مع الصور والمستندات.
+          نُدخلها في برنامج الشجرة (GEDCOM 5.5.1).
+        </p>
+        <div class="actions">
+          <button type="button" onclick="window.print()">طباعة / حفظ PDF</button>
+          <button type="button" class="ghost" onclick="clearForm()">مسح الحقول</button>
+        </div>
+      </header>
+
+      <section>
+        <h2>١) نوع التحديث</h2>
+        <div class="checks">
+          <label><input type="checkbox" /> شخص جديد في الشجرة</label>
+          <label><input type="checkbox" /> تصحيح بيانات موجودة</label>
+          <label><input type="checkbox" /> ولادة جديدة</label>
+          <label><input type="checkbox" /> وفاة</label>
+          <label><input type="checkbox" /> زواج / زوجة</label>
+          <label><input type="checkbox" /> وثائق وصور</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>٢) من يعبّئ النموذج</h2>
+        <div class="grid">
+          <div><label>الاسم</label><input /></div>
+          <div><label>صلته بالشخص</label><input placeholder="ابنه، أخوه، زوجته…" /></div>
+          <div><label>الجوال / واتساب</label><input /></div>
+          <div><label>التاريخ</label><input type="date" /></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>٣) بيانات الشخص</h2>
+        <p class="hint">الاسم الثلاثي كما يُكتب على البطاقة: الاسم + اسم الأب + العائلة. الجنس ذكر أو أنثى فقط.</p>
+        <div class="grid">
+          <div><label>الاسم</label><input /></div>
+          <div><label>اسم الأب</label><input /></div>
+          <div><label>العائلة</label><input /></div>
+          <div>
+            <label>الجنس</label>
+            <div class="checks">
+              <label><input type="radio" name="sex" /> ذكر</label>
+              <label><input type="radio" name="sex" /> أنثى</label>
+            </div>
+          </div>
+          <div><label>تاريخ الميلاد</label><input placeholder="يوم / شهر / سنة" /></div>
+          <div><label>مكان الميلاد</label><input /></div>
+          <div><label>البلد</label><input placeholder="الكويت، السعودية…" /></div>
+          <div><label>مكان الإقامة</label><input /></div>
+          <div class="full"><label>المهنة</label><input /></div>
+          <div class="full">
+            <label>رأس بيت؟</label>
+            <div class="checks"><label><input type="checkbox" /> نعم، جدّ هذه الأسرة الصغيرة (بيت)</label></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>٤) الوالدان</h2>
+        <p class="hint">اسم الأم فيصل عند تشابه الأسماء.</p>
+        <div class="grid">
+          <div><label>اسم الوالد كاملاً</label><input /></div>
+          <div><label>حيّ / متوفى — وتاريخ الوفاة إن وُجد</label><input /></div>
+          <div><label>اسم الوالدة كاملاً (بنت فلان)</label><input /></div>
+          <div><label>حيّة / متوفاة — وتاريخ الوفاة إن وُجد</label><input /></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>٥) الزوج / الزوجات</h2>
+        <p class="hint">حتى أربع زوجات حاليات. السابقة والمتوفاة تُذكر ولا تُحسب ضمن الأربع. الأبناء يُربطون بأمهم.</p>
+        <div class="wife">
+          <span class="badge">الزوجة الأولى</span>
+          <div class="grid" style="margin-top:8px">
+            <div><label>اسمها + اسم أبيها + العائلة</label><input /></div>
+            <div>
+              <label>الصفة</label>
+              <div class="checks">
+                <label><input type="radio" name="w1" /> حالية</label>
+                <label><input type="radio" name="w1" /> سابقة</label>
+                <label><input type="radio" name="w1" /> متوفاة</label>
+              </div>
+            </div>
+            <div class="full"><label>أبناؤها وبناتها منه (بالترتيب إن أمكن)</label><textarea></textarea></div>
+          </div>
+        </div>
+        <div class="wife">
+          <span class="badge">الزوجة الثانية</span>
+          <div class="grid" style="margin-top:8px">
+            <div><label>اسمها + اسم أبيها + العائلة</label><input /></div>
+            <div>
+              <label>الصفة</label>
+              <div class="checks">
+                <label><input type="radio" name="w2" /> حالية</label>
+                <label><input type="radio" name="w2" /> سابقة</label>
+                <label><input type="radio" name="w2" /> متوفاة</label>
+              </div>
+            </div>
+            <div class="full"><label>أبناؤها وبناتها منه</label><textarea></textarea></div>
+          </div>
+        </div>
+        <div class="wife">
+          <span class="badge">الزوجة الثالثة / الرابعة إن وُجدت</span>
+          <div class="full"><label>الأسماء والصفة والأبناء</label><textarea></textarea></div>
+        </div>
+        <div class="full"><label>إن كانت أنثى: اسم الزوج</label><input /></div>
+      </section>
+
+      <section>
+        <h2>٦) الأبناء والبنات (إن لم تُذكر أعلاه)</h2>
+        <p class="hint">لكل مولود: الاسم، ذكر/أنثى، تاريخ الميلاد، اسم الأم. نافذة الإضافة في البرنامج تبقى مفتوحة: ابن ثم ابن ثم ابنة.</p>
+        <textarea class="full" placeholder="مثال: عبدالله — ذكر — ١٩٨٠ — من الزوجة الأولى فلانة بنت فلان"></textarea>
+      </section>
+
+      <section>
+        <h2>٧) الوفاة والدفن — تُملأ عند الطلب فقط</h2>
+        <p class="hint">لا تُعرض في الشجرة إلا إذا طُلبت. من يشمئز يتركها فارغة.</p>
+        <div class="grid">
+          <div><label>تاريخ الوفاة</label><input /></div>
+          <div><label>مكان الوفاة</label><input /></div>
+          <div><label>مكان الدفن</label><input /></div>
+          <div><label>رابط خرائط أو إحداثيات GPS للقبر</label><input placeholder="29.31, 47.88 أو رابط Google Maps" /></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>٨) المرفقات</h2>
+        <p class="hint">صورة شخصية يمكن قصّ الوجه داخل الإطار (صغير / وسط / كبير). سمّ المستند: شهادة ميلاد، دراسية، وفاة، صورة قبر.</p>
+        <div class="checks">
+          <label><input type="checkbox" /> صورة شخصية (كاميرا أو مكتبة)</label>
+          <label><input type="checkbox" /> شهادة ميلاد</label>
+          <label><input type="checkbox" /> شهادة دراسية</label>
+          <label><input type="checkbox" /> شهادة وفاة</label>
+          <label><input type="checkbox" /> صورة قبر</label>
+          <label><input type="checkbox" /> مستند آخر (اكتب الاسم)</label>
+        </div>
+        <div style="margin-top:10px"><label>أسماء الملفات المرفقة</label><textarea></textarea></div>
+      </section>
+
+      <section>
+        <h2>٩) ملاحظات للبرنامج</h2>
+        <textarea placeholder="تشابه أسماء، بيت العائلة، جنسية أخرى، زوجة سابقة لها أبناء…"></textarea>
+      </section>
+
+      <section>
+        <h2>ما يجمعه برنامج نسب (حسب طلبات الشجرة)</h2>
+        <p class="hint">هذه الحقول هي ما بُني في التطبيق — عبّئ ما تعرفه فقط.</p>
+        <ul>
+          <li>بطاقات ذكر/أنثى، تكبير وتصغير وتنقّل في الشجرة، تبويبات: الشجرة / البيوت / المروحة</li>
+          <li>الاسم، الأب، العائلة، الميلاد، الوفاة، الإقامة، المهنة، البلد (علم الدولة)</li>
+          <li>أب، أم، ابن، ابنة، أخ، أخت، زوج/زوجة — بدون «غير محدد» للجنس</li>
+          <li>حتى ٤ زوجات حاليات + سابقة/متوفاة مخفية إلا عند الطلب، والأبناء مربوطون بأمهم</li>
+          <li>بحث لعدم تكرار الاسم مع الأب والأم</li>
+          <li>صور مع تحريك الوجه داخل الإطار، ومستندات باسم يدوي</li>
+          <li>مكان الدفن وGPS اختياريان لا يظهران إلا لمن يطلبهما</li>
+          <li>حفظ GEDCOM 5.5.1 واستيراده، ونموذج التعبئة هذا لإرسال البيانات</li>
+        </ul>
+      </section>
+
+      <footer class="note">
+        بعد التعبئة: أرسل الصورة أو ملف PDF مع المرفقات إلى من يُدخل الشجرة في برنامج نسب.
+      </footer>
+    </div>
+    <script>
+      function clearForm() {
+        document.querySelectorAll("input, textarea").forEach((el) => {
+          if (el.type === "checkbox" || el.type === "radio") el.checked = false;
+          else el.value = "";
+        });
+      }
+    </script>
+  </body>
+</html>
