@@ -1,4 +1,4 @@
-import { childrenOf, spousesOf, wifeOrdinal, wifeStatusTag } from "./graph";
+import { byBirthThenName, childrenOf, spousesOf, wifeOrdinal, wifeStatusTag } from "./graph";
 import {
   CARD_H,
   CARD_W,
@@ -6,6 +6,7 @@ import {
   GAP_Y,
   PAD,
   SPOUSE_GAP,
+  spouseIdList,
   type LayoutEdge,
   type LayoutNode,
   type Person,
@@ -172,14 +173,8 @@ function elbow(from: { x: number; y: number }, to: { x: number; y: number }): { 
   return [from, { x: midX, y: from.y }, { x: midX, y: to.y }, to];
 }
 
-function buildEdges(
-  people: Record<string, Person>,
-  nodes: Map<string, LayoutNode>,
-  focusId: string,
-): LayoutEdge[] {
+function buildGeneralEdges(people: Record<string, Person>, nodes: Map<string, LayoutNode>): LayoutEdge[] {
   const edges: LayoutEdge[] = [];
-  const focus = people[focusId];
-  if (!focus) return edges;
 
   const addParentEdge = (childId: string, parentId: string | null) => {
     if (!parentId) return;
@@ -203,7 +198,6 @@ function buildEdges(
     if (person.motherId && nodes.has(person.motherId)) addParentEdge(person.id, person.motherId);
   }
 
-  const focusNode = nodes.get(focusId);
   const spouseDrawn = new Set<string>();
   for (const node of nodes.values()) {
     const person = people[node.id];
@@ -227,6 +221,20 @@ function buildEdges(
       });
     }
   }
+
+  return edges;
+}
+
+function buildEdges(
+  people: Record<string, Person>,
+  nodes: Map<string, LayoutNode>,
+  focusId: string,
+): LayoutEdge[] {
+  const focus = people[focusId];
+  if (!focus) return [];
+
+  const edges = buildGeneralEdges(people, nodes);
+  const focusNode = nodes.get(focusId);
 
   const kids = childrenOf(people, focusId).filter((k) => nodes.has(k.id));
   const spouseNodes = spousesOf(people, focus)
@@ -383,6 +391,151 @@ export function layoutHourglass(people: Record<string, Person>, focusId: string 
     n.y += oy;
   }
   const edges = buildEdges(people, nodes, focusId);
+  const bbox = bboxOf(nodes.values());
+  return {
+    nodes: [...nodes.values()],
+    edges,
+    bbox: {
+      x: 0,
+      y: 0,
+      w: bbox.w + PAD * 2,
+      h: bbox.h + PAD * 2,
+    },
+  };
+}
+
+export function layoutFullTree(people: Record<string, Person>): TreeLayout {
+  const empty: TreeLayout = { nodes: [], edges: [], bbox: { x: 0, y: 0, w: 800, h: 600 } };
+  const allIds = Object.keys(people);
+  if (!allIds.length) return empty;
+
+  const spouseOfSomeone = new Set<string>();
+  for (const p of Object.values(people)) {
+    for (const sid of spouseIdList(p)) spouseOfSomeone.add(sid);
+  }
+
+  const primaryParentId = (p: Person): string | null => {
+    if (p.fatherId && people[p.fatherId]) return p.fatherId;
+    if (p.motherId && people[p.motherId]) return p.motherId;
+    return null;
+  };
+
+  const childrenByParent = new Map<string, Person[]>();
+  for (const p of Object.values(people)) {
+    const pp = primaryParentId(p);
+    if (!pp) continue;
+    const arr = childrenByParent.get(pp) ?? [];
+    arr.push(p);
+    childrenByParent.set(pp, arr);
+  }
+  for (const arr of childrenByParent.values()) arr.sort(byBirthThenName);
+
+  const nodes = new Map<string, LayoutNode>();
+  const placed = new Set<string>();
+  const heightCache = new Map<string, number>();
+
+  function measure(id: string, stack: Set<string>): number {
+    if (stack.has(id)) return CARD_H;
+    const cached = heightCache.get(id);
+    if (cached !== undefined) return cached;
+    const person = people[id]!;
+    const spouses = spousesOf(people, person);
+    const ownHeight = (1 + spouses.length) * CARD_H + spouses.length * SPOUSE_GAP;
+    const kids = childrenByParent.get(id) ?? [];
+    let h = ownHeight;
+    if (kids.length) {
+      const nextStack = new Set(stack);
+      nextStack.add(id);
+      const total = kids.reduce((s, k) => s + measure(k.id, nextStack), 0) + GAP_Y * (kids.length - 1);
+      h = Math.max(ownHeight, total);
+    }
+    heightCache.set(id, h);
+    return h;
+  }
+
+  function place(id: string, x: number, top: number, stack: Set<string>): void {
+    if (placed.has(id) || stack.has(id) || !people[id]) return;
+    placed.add(id);
+    const person = people[id]!;
+    const spouses = spousesOf(people, person).filter((s) => !placed.has(s.id));
+    const blockHeight = measure(id, stack);
+    const ownHeight = (1 + spouses.length) * CARD_H + spouses.length * SPOUSE_GAP;
+    const ownTop = top + (blockHeight - ownHeight) / 2;
+    nodes.set(id, {
+      id,
+      x,
+      y: ownTop,
+      w: CARD_W,
+      h: CARD_H,
+      role: stack.size === 0 ? "focus" : "child",
+    });
+    let sy = ownTop + CARD_H + SPOUSE_GAP;
+    spouses.forEach((spouse, index) => {
+      placed.add(spouse.id);
+      nodes.set(spouse.id, {
+        id: spouse.id,
+        x,
+        y: sy,
+        w: CARD_W,
+        h: CARD_H,
+        role: "spouse",
+        caption:
+          spouse.gender === "female"
+            ? ["الزوجة " + wifeOrdinal(index), wifeStatusTag(spouse)].filter(Boolean).join(" · ")
+            : "الزوج",
+      });
+      sy += CARD_H + SPOUSE_GAP;
+    });
+
+    const kids = childrenByParent.get(id) ?? [];
+    if (kids.length) {
+      const nextStack = new Set(stack);
+      nextStack.add(id);
+      const childX = x - CARD_W - GAP_X;
+      const total = kids.reduce((s, k) => s + measure(k.id, nextStack), 0) + GAP_Y * (kids.length - 1);
+      let cy = top + (blockHeight - total) / 2;
+      for (const kid of kids) {
+        const kh = measure(kid.id, nextStack);
+        place(kid.id, childX, cy, nextStack);
+        cy += kh + GAP_Y;
+      }
+    }
+  }
+
+  const byName = (a: string, b: string) =>
+    (people[a]!.givenName || "").localeCompare(people[b]!.givenName || "", "ar");
+
+  const roots = allIds
+    .filter((id) => !primaryParentId(people[id]!) && !spouseOfSomeone.has(id))
+    .sort(byName);
+
+  let cursorY = 0;
+  for (const rootId of roots) {
+    if (placed.has(rootId)) continue;
+    const h = measure(rootId, new Set());
+    place(rootId, 0, cursorY, new Set());
+    cursorY += h + GAP_Y * 3;
+  }
+
+  // شبكة أمان: أي شخص لم يظهر بعد (بيانات ناقصة أو رابط غير مكتمل) يُضاف كجذر مستقل
+  // حتى تظهر كل الأسماء دائمًا.
+  const leftover = allIds.filter((id) => !placed.has(id)).sort(byName);
+  for (const id of leftover) {
+    if (placed.has(id)) continue;
+    const h = measure(id, new Set());
+    place(id, 0, cursorY, new Set());
+    cursorY += h + GAP_Y * 3;
+  }
+
+  const raw = bboxOf(nodes.values());
+  const ox = PAD - raw.x;
+  const oy = PAD - raw.y;
+  for (const n of nodes.values()) {
+    n.x += ox;
+    n.y += oy;
+  }
+
+  const edges = buildGeneralEdges(people, nodes);
   const bbox = bboxOf(nodes.values());
   return {
     nodes: [...nodes.values()],
