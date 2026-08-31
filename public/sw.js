@@ -6,8 +6,8 @@
 //     مع تحديثها في الخلفية (stale-while-revalidate).
 //   - لا تُخزَّن مسارات API/المصادقة الديناميكية.
 
-const CACHE_VERSION = "nasab-shell-v1";
-const RUNTIME_CACHE = "nasab-runtime-v1";
+const CACHE_VERSION = "nasab-shell-v2";
+const RUNTIME_CACHE = "nasab-runtime-v2";
 
 const SKIP_PATH_PREFIXES = ["/api/", "/auth/", "/__grok/", "/@", "/node_modules"];
 
