@@ -77,7 +77,10 @@ function resolveDropTarget(params: {
     const dx = worldX - cx;
     const dy = worldY - cy;
     const dist = Math.hypot(dx, dy);
-    const overlap = Math.abs(dx) < n.w * 0.62 && Math.abs(dy) < n.h * 0.62;
+    // وسّعنا هامش الالتقاط هنا (كان 0.62/0.55/2.2) بعد ملاحظة أن السحب الحقيقي على الجوال/التراك
+    // باد نادرًا ما يكون دقيقًا 100%، خصوصًا في عرض عائلة صغيرة (بطاقات قليلة ومتقاربة) — الهدف
+    // الأقرب لا يزال يُختار دائمًا بالمسافة، فالتوسيع لا يغيّر أي نتيجة كانت تُحسب صح من قبل.
+    const overlap = Math.abs(dx) < n.w * 0.75 && Math.abs(dy) < n.h * 0.75;
     const cyclic = hasAncestor(n.id, draggedId, people);
     if (overlap) {
       if (cyclic) {
@@ -88,8 +91,8 @@ function resolveDropTarget(params: {
       continue;
     }
     if (cyclic) continue;
-    const sameColumn = Math.abs(dx) < n.w * 0.55;
-    const closeVertically = Math.abs(dy) < n.h * 2.2;
+    const sameColumn = Math.abs(dx) < n.w * 0.7;
+    const closeVertically = Math.abs(dy) < n.h * 3;
     if (sameColumn && closeVertically && (target.fatherId || target.motherId)) {
       siblingCandidates.push({ targetId: n.id, dist });
     }
@@ -313,14 +316,15 @@ export function TreeCanvas() {
     targetId: string;
     zone: DropZone;
   } | null>(null);
-  // رسالة عابرة تشرح للمستخدم *لماذا* رجعت البطاقة مكانها (بدل ما ترجع بصمت بلا تفسير) —
-  // تظهر فقط عند رفض الإفلات لأنه يكوّن حلقة نسب غير منطقية، وتختفي تلقائيًا بعد قليل.
-  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  // رسالة عابرة تشرح للمستخدم *لماذا* رجعت البطاقة مكانها (بدل ما ترجع بصمت بلا تفسير) — تظهر
+  // في حالتين: "danger" (أحمر) عند رفض الإفلات لأنه يكوّن حلقة نسب غير منطقية، و"warn" (كهرماني)
+  // عند عدم إيجاد أي هدف قريب بما يكفي أصلاً (سحب غير دقيق). تختفي تلقائيًا بعد قليل.
+  const [dropNotice, setDropNotice] = useState<{ text: string; tone: "danger" | "warn" } | null>(null);
   const dropNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showDropNotice = useCallback((text: string) => {
+  const showDropNotice = useCallback((text: string, tone: "danger" | "warn" = "danger") => {
     if (dropNoticeTimer.current) clearTimeout(dropNoticeTimer.current);
-    setDropNotice(text);
+    setDropNotice({ text, tone });
     dropNoticeTimer.current = setTimeout(() => setDropNotice(null), 3200);
   }, []);
 
@@ -379,6 +383,9 @@ export function TreeCanvas() {
       const target = resolveDropTarget({ draggedId: id, worldX, worldY, nodes: layout.nodes, people });
       if (!target) {
         setDragVisual(null);
+        // سحب حقيقي (تحرّك أكثر من 10px) لكن بلا أي هدف قريب بما يكفي — كانت هذه الحالة تُرجع
+        // البطاقة بصمت تام بدون أي تفسير. الآن نوضّح للمستخدم أن السبب هو دقّة الإفلات لا خلل.
+        showDropNotice("ما وصلت لهدف قريب بما يكفي — أفلت البطاقة فوق بطاقة الشخص الآخر مباشرة، أو قريبًا جدًا منها.", "warn");
         return;
       }
       if (target.zone === "blocked") {
@@ -830,9 +837,12 @@ export function TreeCanvas() {
         {dropNotice ? (
           <div
             data-ui
-            className="pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-danger px-4 py-2 text-xs font-medium text-cream shadow-[var(--shadow-card)]"
+            className={cn(
+              "pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-xs font-medium text-cream shadow-[var(--shadow-card)]",
+              dropNotice.tone === "warn" ? "bg-amber-600" : "bg-danger",
+            )}
           >
-            {dropNotice}
+            {dropNotice.text}
           </div>
         ) : null}
 
