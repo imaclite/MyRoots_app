@@ -4,6 +4,7 @@ import { layoutFullTree, layoutHourglass } from "@/lib/tree/layout";
 import { useTreeStore } from "@/lib/tree/store";
 import { spouseIdList, type LayoutNode, type Person } from "@/lib/tree/types";
 import { fullName } from "@/lib/tree/format";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +18,7 @@ import { PersonCard } from "./person-card";
 
 type Transform = { x: number; y: number; k: number };
 type Mode = "index" | "family" | "focus";
-type DropZone = "father" | "sibling";
+type DropZone = "father" | "sibling" | "blocked";
 
 const MIN_K = 0.28;
 const MAX_K = 2.4;
@@ -54,6 +55,8 @@ function hasAncestor(personId: string, ancestorId: string, people: Record<string
 // نحدد أقرب "هدف" صالح لعملية السحب، ونوع الربط المقترح:
 // - "father": أفلتّ البطاقة فوق بطاقة أخرى مباشرة → يتبع هذا الشخص كابن/ابنة لصاحب البطاقة.
 // - "sibling": أفلتّها بجانبها بنفس العمود (نفس الجيل) → يصبح أخًا/أختًا له (بنفس الوالدين).
+// - "blocked": أفلتّها فوق شخص يُنشئ حلقة نسب غير منطقية (أحد أحفاده مثلاً) — نرفض الربط، لكن
+//   نُرجع الهدف حتى تقدر الواجهة توضّح للمستخدم *لماذا* رجعت البطاقة مكانها بدل ما ترجع بصمت.
 function resolveDropTarget(params: {
   draggedId: string;
   worldX: number;
@@ -64,21 +67,27 @@ function resolveDropTarget(params: {
   const { draggedId, worldX, worldY, nodes, people } = params;
   const fatherCandidates: { targetId: string; dist: number }[] = [];
   const siblingCandidates: { targetId: string; dist: number }[] = [];
+  const blockedCandidates: { targetId: string; dist: number }[] = [];
   for (const n of nodes) {
     if (n.id === draggedId) continue;
     const target = people[n.id];
     if (!target) continue;
-    if (hasAncestor(n.id, draggedId, people)) continue;
     const cx = n.x + n.w / 2;
     const cy = n.y + n.h / 2;
     const dx = worldX - cx;
     const dy = worldY - cy;
     const dist = Math.hypot(dx, dy);
     const overlap = Math.abs(dx) < n.w * 0.62 && Math.abs(dy) < n.h * 0.62;
+    const cyclic = hasAncestor(n.id, draggedId, people);
     if (overlap) {
-      fatherCandidates.push({ targetId: n.id, dist });
+      if (cyclic) {
+        blockedCandidates.push({ targetId: n.id, dist });
+      } else {
+        fatherCandidates.push({ targetId: n.id, dist });
+      }
       continue;
     }
+    if (cyclic) continue;
     const sameColumn = Math.abs(dx) < n.w * 0.55;
     const closeVertically = Math.abs(dy) < n.h * 2.2;
     if (sameColumn && closeVertically && (target.fatherId || target.motherId)) {
@@ -87,8 +96,10 @@ function resolveDropTarget(params: {
   }
   fatherCandidates.sort((a, b) => a.dist - b.dist);
   siblingCandidates.sort((a, b) => a.dist - b.dist);
+  blockedCandidates.sort((a, b) => a.dist - b.dist);
   if (fatherCandidates.length) return { targetId: fatherCandidates[0]!.targetId, zone: "father" };
   if (siblingCandidates.length) return { targetId: siblingCandidates[0]!.targetId, zone: "sibling" };
+  if (blockedCandidates.length) return { targetId: blockedCandidates[0]!.targetId, zone: "blocked" };
   return null;
 }
 
@@ -302,6 +313,22 @@ export function TreeCanvas() {
     targetId: string;
     zone: DropZone;
   } | null>(null);
+  // رسالة عابرة تشرح للمستخدم *لماذا* رجعت البطاقة مكانها (بدل ما ترجع بصمت بلا تفسير) —
+  // تظهر فقط عند رفض الإفلات لأنه يكوّن حلقة نسب غير منطقية، وتختفي تلقائيًا بعد قليل.
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const dropNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showDropNotice = useCallback((text: string) => {
+    if (dropNoticeTimer.current) clearTimeout(dropNoticeTimer.current);
+    setDropNotice(text);
+    dropNoticeTimer.current = setTimeout(() => setDropNotice(null), 3200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (dropNoticeTimer.current) clearTimeout(dropNoticeTimer.current);
+    };
+  }, []);
 
   const handleCardPointerDown = useCallback((id: string, e: React.PointerEvent<HTMLButtonElement>) => {
     personDrag.current = { id, startClientX: e.clientX, startClientY: e.clientY };
@@ -354,10 +381,21 @@ export function TreeCanvas() {
         setDragVisual(null);
         return;
       }
+      if (target.zone === "blocked") {
+        const dragged = people[id];
+        const targetPerson = people[target.targetId];
+        setDragVisual(null);
+        if (dragged && targetPerson) {
+          showDropNotice(
+            `ما يصير: ${fullName(targetPerson)} أصلاً من أحفاد ${fullName(dragged)} — ما ينربطون بهذا الاتجاه.`,
+          );
+        }
+        return;
+      }
       setDragVisual({ id, dx, dy, targetId: target.targetId, zone: target.zone });
       setPendingReparent({ draggedId: id, targetId: target.targetId, zone: target.zone });
     },
-    [nodesById, layout.nodes, people],
+    [nodesById, layout.nodes, people, showDropNotice],
   );
 
   const cancelReparent = useCallback(() => {
@@ -372,7 +410,7 @@ export function TreeCanvas() {
       const targetPerson = people[targetId];
       const which = targetPerson?.gender === "female" ? "mother" : "father";
       linkExistingParent(draggedId, targetId, which);
-    } else {
+    } else if (zone === "sibling") {
       linkExistingSibling(targetId, draggedId);
     }
     setPendingReparent(null);
@@ -753,10 +791,15 @@ export function TreeCanvas() {
                       ? `سيتبع: ${fullName(people[dragVisual.targetId] ?? ({} as Person))}`
                       : dragVisual.zone === "sibling" && dragVisual.targetId
                         ? `أخ/أخت لـ: ${fullName(people[dragVisual.targetId] ?? ({} as Person))}`
-                        : "اسحب فوق شخص لربطه به كابن، أو بجانب أخيه ليصبح أخًا له";
+                        : dragVisual.zone === "blocked"
+                          ? "غير مسموح — هذا الشخص أصلاً من أحفادك"
+                          : "اسحب فوق شخص لربطه به كابن، أو بجانب أخيه ليصبح أخًا له";
                   return (
                     <div
-                      className="pointer-events-none absolute z-50 -translate-y-full whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-medium text-cream shadow-[var(--shadow-card)]"
+                      className={cn(
+                        "pointer-events-none absolute z-50 -translate-y-full whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium shadow-[var(--shadow-card)]",
+                        dragVisual.zone === "blocked" ? "bg-danger text-cream" : "bg-ink text-cream",
+                      )}
                       style={{ left: node.x + dragVisual.dx, top: node.y + dragVisual.dy - 8 }}
                     >
                       {label}
@@ -783,6 +826,15 @@ export function TreeCanvas() {
             {mode === "focus" ? "شخص واحد وأقاربه" : selectedFamily ? `آل ${selectedFamily}` : "الشجرة كاملة"}
           </span>
         </div>
+
+        {dropNotice ? (
+          <div
+            data-ui
+            className="pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-danger px-4 py-2 text-xs font-medium text-cream shadow-[var(--shadow-card)]"
+          >
+            {dropNotice}
+          </div>
+        ) : null}
 
         <div data-ui className="absolute bottom-24 left-4 z-40 flex flex-col gap-1 rounded-xl bg-paper/90 p-1 shadow-[var(--shadow-card)]">
           <Button variant="ghost" size="icon-sm" aria-label="تكبير" onClick={() => {
