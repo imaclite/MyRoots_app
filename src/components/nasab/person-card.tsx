@@ -1,58 +1,86 @@
-import { useEffect } from "react";
+// خدمة عامل (Service Worker) لتطبيق "نسب" — تشغيل بدون إنترنت + تثبيت كتطبيق.
+// استراتيجية بسيطة لا تحتاج قائمة ملفات مبنية وقت البناء:
+//   - صفحات التنقّل (navigation): الشبكة أولًا، ثم النسخة المخزّنة، ثم الصفحة
+//     الرئيسية المخزّنة كحل أخير.
+//   - الأصول الثابتة (JS/CSS/صور/خطوط) من نفس الأصل: تُقدَّم من المخزن فورًا
+//     مع تحديثها في الخلفية (stale-while-revalidate).
+//   - لا تُخزَّن مسارات API/المصادقة الديناميكية.
 
-/**
- * يسجّل خدمة العامل (public/sw.js) بعد اكتمال التحميل حتى يعمل التطبيق بدون
- * إنترنت ويصبح قابلاً للتثبيت (Add to Home Screen / تثبيت) على ماك وآيفون
- * وآيباد وأندرويد. لا يفعل شيئًا في بيئات لا تدعم Service Worker.
- *
- * كما يراقب صدور نسخة جديدة من الموقع (بعد كل نشر جديد) ويعيد تحميل الصفحة
- * تلقائيًا مرة واحدة بمجرد أن تتولى النسخة الجديدة التحكم — بدل أن يبقى
- * المتصفح شغّالاً على نسخة قديمة مخزّنة إلى أن يعمل المستخدم تحديثًا يدويًا
- * لا يعرف عنه. هذا هو سبب ظهور مشاكل مثل "الميزة الجديدة ما تشتغل" رغم أن
- * الكود الصحيح منشور فعليًا على الموقع.
- */
-export function PwaRegister() {
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator)) return;
+const CACHE_VERSION = "nasab-shell-v2";
+const RUNTIME_CACHE = "nasab-runtime-v2";
 
-    let reloading = false;
-    const reloadOnce = () => {
-      if (reloading) return;
-      reloading = true;
-      window.location.reload();
-    };
+const SKIP_PATH_PREFIXES = ["/api/", "/auth/", "/__grok/", "/@", "/node_modules"];
 
-    // بمجرد ما نسخة عامل جديدة تتولى التحكم بالصفحة (بعد نشر جديد) — أعد التحميل
-    // تلقائيًا مرة واحدة فقط حتى يحصل المستخدم على أحدث كود بدون أي خطوة يدوية.
-    navigator.serviceWorker.addEventListener("controllerchange", reloadOnce);
-
-    const register = () => {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => {
-          // تحقّق فورًا من وجود نسخة أحدث (مفيد إن كانت الصفحة مفتوحة من قبل
-          // ونُشر تحديث جديد أثناء ذلك)، وأيضًا كل مرة يرجع فيها المستخدم للتطبيق.
-          reg.update().catch(() => {});
-          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") reg.update().catch(() => {});
-          });
-        })
-        .catch(() => {
-          // تجاهل الفشل بصمت (مثلاً أثناء المعاينة داخل إطار لا يسمح به).
-        });
-    };
-
-    if (document.readyState === "complete") {
-      register();
-    } else {
-      window.addEventListener("load", register, { once: true });
-    }
-
-    return () => {
-      navigator.serviceWorker.removeEventListener("controllerchange", reloadOnce);
-    };
-  }, []);
-
-  return null;
+function shouldBypass(url) {
+  return SKIP_PATH_PREFIXES.some((p) => url.pathname.startsWith(p));
 }
+
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_VERSION).then((cache) =>
+      cache.addAll(["/", "/favicon.svg"]).catch(() => {
+        // أول تشغيل بلا إنترنت أو مسار غير متاح مؤقتًا — لا يوقف التثبيت.
+      }),
+    ),
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key !== CACHE_VERSION && key !== RUNTIME_CACHE)
+          .map((key) => caches.delete(key)),
+      );
+      await self.clients.claim();
+    })(),
+  );
+});
+
+async function networkFirstNavigation(request) {
+  const cache = await caches.open(CACHE_VERSION);
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) cache.put(request, response.clone());
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    const shell = await cache.match("/");
+    if (shell) return shell;
+    return Response.error();
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(RUNTIME_CACHE);
+  const cached = await cache.match(request);
+  const networkPromise = fetch(request)
+    .then((response) => {
+      if (response && response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => undefined);
+  return cached || (await networkPromise) || Response.error();
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (shouldBypass(url)) return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirstNavigation(request));
+    return;
+  }
+
+  if (["script", "style", "image", "font", "worker"].includes(request.destination)) {
+    event.respondWith(staleWhileRevalidate(request));
+  }
+});
