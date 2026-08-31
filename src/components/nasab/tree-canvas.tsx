@@ -4,7 +4,6 @@ import { layoutFullTree, layoutHourglass } from "@/lib/tree/layout";
 import { useTreeStore } from "@/lib/tree/store";
 import { spouseIdList, type LayoutNode, type Person } from "@/lib/tree/types";
 import { fullName } from "@/lib/tree/format";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -124,7 +123,8 @@ export function TreeCanvas() {
   const [manualFamilies, setManualFamilies] = useState<string[]>([]);
   const [hiddenFamilies, setHiddenFamilies] = useState<string[]>([]);
   const [manageOpen, setManageOpen] = useState(false);
-  const [manageFilter, setManageFilter] = useState("");
+  const [newFamilyName, setNewFamilyName] = useState("");
+  const [showSmallFamilies, setShowSmallFamilies] = useState(false);
 
   useEffect(() => {
     try {
@@ -179,8 +179,33 @@ export function TreeCanvas() {
     [isFamilyVisible, manualFamilies, hiddenFamilies],
   );
 
-  const familyGroups = useMemo(
-    () => allFamilyCounts.filter(([name, count]) => isFamilyVisible(name, count)),
+  // إضافة اسم عائلة جديد يدويًا — حتى لو ما فيه أي شخص مسجَّل بها بعد (مثل عائلة لسا ما اكتملت
+  // قراءتها من الملصق الأصلي). يظهر بطاقتها فورًا في الصفحة الرئيسية بعدد "0" لحين إضافة أشخاص لها.
+  const handleAddFamily = useCallback(() => {
+    const name = newFamilyName.trim();
+    if (!name) return;
+    setHiddenFamilies((prev) => prev.filter((n) => n !== name));
+    setManualFamilies((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    setNewFamilyName("");
+  }, [newFamilyName]);
+
+  // العائلات الظاهرة فعليًا الآن في الصفحة الرئيسية — تشمل العائلات الكبيرة تلقائيًا + أي عائلة
+  // أُضيفت يدويًا حتى لو عدد أفرادها صفر، وتستبعد ما أُخفي يدويًا.
+  const familyGroups = useMemo(() => {
+    const counts = new Map(allFamilyCounts);
+    for (const name of manualFamilies) {
+      if (!counts.has(name)) counts.set(name, 0);
+    }
+    return [...counts.entries()]
+      .filter(([name, count]) => isFamilyVisible(name, count))
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ar"));
+  }, [allFamilyCounts, manualFamilies, isFamilyVisible]);
+
+  // عائلات صغيرة موجودة فعلًا في البيانات لكنها غير ظاهرة حاليًا (أغلبها أسماء عائلات أصلية
+  // لزوجات دخلن العائلة بالزواج) — نخفيها افتراضيًا لتبقى القائمة قصيرة ومريحة، وتظهر فقط عند
+  // الحاجة لتصحيح خطأ (مثلاً عائلة صغيرة فعلية يجب أن تظهر).
+  const smallFamilies = useMemo(
+    () => allFamilyCounts.filter(([name, count]) => !isFamilyVisible(name, count)),
     [allFamilyCounts, isFamilyVisible],
   );
 
@@ -508,46 +533,83 @@ export function TreeCanvas() {
     <Dialog open={manageOpen} onOpenChange={setManageOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>إضافة أو إزالة عائلات من القائمة</DialogTitle>
+          <DialogTitle>إضافة أو إزالة عائلة</DialogTitle>
           <DialogDescription>
-            فعّل العائلات التي تريد ظهور بطاقة لها في الصفحة الرئيسية، أو أطفئ أي عائلة ظهرت بالخطأ (مثل اسم عائلة زوجة
-            دخلت العائلة بالزواج).
+            أضف اسم عائلة جديدة — حتى لو ما فيها أشخاص مسجّلين بعد — لتظهر بطاقتها في الصفحة الرئيسية، أو أخفِ أي عائلة
+            من القائمة الحالية.
           </DialogDescription>
         </DialogHeader>
-        <input
-          type="text"
-          value={manageFilter}
-          onChange={(e) => setManageFilter(e.target.value)}
-          placeholder="ابحث عن اسم عائلة..."
-          className="mb-3 h-10 w-full rounded-lg border border-ink/10 bg-cream px-3 text-sm text-ink outline-none focus:border-chip"
-        />
-        <div className="max-h-80 space-y-1 overflow-y-auto">
-          {allFamilyCounts
-            .filter(([name]) => !manageFilter.trim() || name.includes(manageFilter.trim()))
-            .map(([name, count]) => {
-              const visible = isFamilyVisible(name, count);
-              return (
+
+        <div className="mb-4 flex gap-2">
+          <input
+            type="text"
+            value={newFamilyName}
+            onChange={(e) => setNewFamilyName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAddFamily();
+              }
+            }}
+            placeholder="اسم عائلة جديدة، مثل: الطيب"
+            className="h-10 flex-1 rounded-lg border border-ink/10 bg-cream px-3 text-sm text-ink outline-none focus:border-chip"
+          />
+          <Button size="sm" onClick={handleAddFamily} disabled={!newFamilyName.trim()}>
+            + إضافة
+          </Button>
+        </div>
+
+        <p className="mb-1.5 text-xs font-medium text-muted">العائلات الظاهرة حاليًا في الصفحة الرئيسية</p>
+        <div className="max-h-56 space-y-1 overflow-y-auto">
+          {familyGroups.map(([name, count]) => (
+            <div key={name} className="flex items-center justify-between rounded-lg bg-chip/10 px-3 py-2 text-sm text-ink">
+              <span>آل {name}</span>
+              <span className="flex items-center gap-3">
+                <span className="text-xs text-muted">{count} شخصًا</span>
                 <button
-                  key={name}
                   type="button"
                   onClick={() => toggleFamily(name, count)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-right text-sm transition",
-                    visible ? "bg-chip/10 text-ink" : "bg-transparent text-muted hover:bg-cream-deep/50",
-                  )}
+                  className="text-xs font-medium text-danger hover:underline"
                 >
-                  <span className="flex items-center gap-2">
-                    <span className={cn("size-2.5 rounded-full", visible ? "bg-chip" : "bg-ink/15")} aria-hidden />
-                    آل {name}
-                  </span>
-                  <span className="text-xs text-muted">{count} شخصًا</span>
+                  إخفاء
                 </button>
-              );
-            })}
-          {allFamilyCounts.length === 0 ? (
-            <p className="px-1 py-4 text-center text-sm text-muted">لا توجد عائلات في البيانات بعد.</p>
+              </span>
+            </div>
+          ))}
+          {familyGroups.length === 0 ? (
+            <p className="px-1 py-3 text-center text-xs text-muted">لا توجد عائلات ظاهرة حاليًا.</p>
           ) : null}
         </div>
+
+        {smallFamilies.length ? (
+          <div className="mt-3 border-t border-ink/10 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowSmallFamilies((v) => !v)}
+              className="text-xs font-medium text-chip hover:underline"
+            >
+              {showSmallFamilies
+                ? "إخفاء العائلات الصغيرة الأخرى"
+                : `عائلات صغيرة أخرى موجودة في البيانات (${smallFamilies.length}) — لتصحيح الأخطاء`}
+            </button>
+            {showSmallFamilies ? (
+              <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                {smallFamilies.map(([name, count]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleFamily(name, count)}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-right text-xs text-muted transition hover:bg-cream-deep/50"
+                  >
+                    <span>آل {name}</span>
+                    <span>{count} شخصًا</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <DialogFooter>
           <Button onClick={() => setManageOpen(false)}>تم</Button>
         </DialogFooter>
