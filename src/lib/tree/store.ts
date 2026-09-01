@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createDemoTree, isStockDemo } from "./demo-data";
 import { createHamraniSeedTree } from "./hamrani-seed";
 import { fullName } from "./format";
-import { bindSpouseIds, canAddWife, spousesOf, unlinkPerson } from "./graph";
+import { bindSpouseIds, canAddWife, spousesOf, unlinkPerson, wouldCreateCycle } from "./graph";
 import { deleteMedia } from "./media";
 import { toGedcom } from "./gedcom";
 import {
@@ -67,13 +67,13 @@ type Store = {
   dismissBanner: () => void;
   setTreeName: (name: string) => void;
   addChild: (parentId: string, draft: PersonDraft, otherParentId: string | null) => string;
-  linkExistingChild: (parentId: string, childId: string, otherParentId: string | null) => void;
+  linkExistingChild: (parentId: string, childId: string, otherParentId: string | null) => boolean;
   linkExistingSpouse: (personId: string, spouseId: string) => void;
-  linkExistingParent: (childId: string, parentId: string, which: "father" | "mother") => void;
+  linkExistingParent: (childId: string, parentId: string, which: "father" | "mother") => boolean;
   addSpouse: (personId: string, draft: PersonDraft) => string;
   addParent: (childId: string, which: "father" | "mother", draft: PersonDraft) => string;
   addSibling: (personId: string, draft: PersonDraft) => string;
-  linkExistingSibling: (personId: string, siblingId: string) => void;
+  linkExistingSibling: (personId: string, siblingId: string) => boolean;
   addUnlinked: (draft: PersonDraft) => string;
   updatePerson: (id: string, draft: PersonDraft) => void;
   setPhoto: (id: string, photoId: string | null) => void;
@@ -285,7 +285,8 @@ export const useTreeStore = create<Store>((set, get) => {
       const { people } = get();
       const parent = people[parentId];
       const child = people[childId];
-      if (!parent || !child || parentId === childId) return;
+      if (!parent || !child || parentId === childId) return false;
+      if (wouldCreateCycle(people, childId, parentId)) return false;
       const other = otherParentId ? people[otherParentId] : null;
       const next = clonePeople(people);
       if (parent.gender === "male") {
@@ -303,6 +304,7 @@ export const useTreeStore = create<Store>((set, get) => {
       }
       commit({ people: next, focusId: get().focusId }, "ربط", fullName(child));
       set({ selectedId: childId });
+      return true;
     },
 
     linkExistingSpouse: (personId, spouseId) => {
@@ -321,7 +323,8 @@ export const useTreeStore = create<Store>((set, get) => {
       const { people } = get();
       const child = people[childId];
       const parent = people[parentId];
-      if (!child || !parent || childId === parentId) return;
+      if (!child || !parent || childId === parentId) return false;
+      if (wouldCreateCycle(people, childId, parentId)) return false;
       const next = clonePeople(people);
       next[childId] = {
         ...child,
@@ -336,6 +339,7 @@ export const useTreeStore = create<Store>((set, get) => {
         next[parentId] = parent;
       }
       commit({ people: next, focusId: get().focusId }, which === "father" ? "والد" : "والدة", fullName(parent));
+      return true;
     },
 
     addSpouse: (personId, draft) => {
@@ -410,7 +414,9 @@ export const useTreeStore = create<Store>((set, get) => {
       const { people } = get();
       const person = people[personId];
       const sibling = people[siblingId];
-      if (!person || !sibling || personId === siblingId) return;
+      if (!person || !sibling || personId === siblingId) return false;
+      if (person.fatherId && wouldCreateCycle(people, siblingId, person.fatherId)) return false;
+      if (person.motherId && wouldCreateCycle(people, siblingId, person.motherId)) return false;
       const next = clonePeople(people);
       next[siblingId] = {
         ...sibling,
@@ -418,6 +424,7 @@ export const useTreeStore = create<Store>((set, get) => {
         motherId: person.motherId ?? sibling.motherId,
       };
       commit({ people: next, focusId: get().focusId }, "أخ", fullName(sibling));
+      return true;
     },
 
     addUnlinked: (draft) => {
