@@ -14,12 +14,16 @@ function p(partial: Partial<Person> & { id: string; givenName: string; gender: P
     id: partial.id,
     givenName: partial.givenName,
     fatherName: partial.fatherName ?? "",
+    grandfatherName: partial.grandfatherName ?? "",
+    greatGrandfatherName: partial.greatGrandfatherName ?? "",
+    kunya: partial.kunya ?? "",
     familyName: partial.familyName ?? "الحمراني",
     gender: partial.gender,
     birthDate: partial.birthDate ?? "",
     birthPlace: partial.birthPlace ?? "",
     deathDate: partial.deathDate ?? "",
     deathPlace: partial.deathPlace ?? "",
+    deceased: partial.deceased ?? Boolean(partial.deathDate),
     residence: partial.residence ?? "",
     occupation: partial.occupation ?? "",
     notes: partial.notes ?? "",
@@ -38,6 +42,7 @@ function p(partial: Partial<Person> & { id: string; givenName: string; gender: P
     spouseIds: [],
     houseHead: partial.houseHead ?? false,
     wifeKind: partial.deathDate ? "deceased" : "current",
+    birthOrder: partial.birthOrder ?? 0,
   };
 }
 
