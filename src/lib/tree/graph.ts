@@ -306,6 +306,44 @@ export function similarPeople(
     .map((row) => row.p);
 }
 
+export function hasAncestor(people: Record<string, Person>, personId: string, ancestorId: string): boolean {
+  const visited = new Set<string>();
+  const queue = [personId];
+  let guard = 0;
+  while (queue.length && guard < 5000) {
+    guard++;
+    const id = queue.shift();
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    const p = people[id];
+    if (!p) continue;
+    if (p.fatherId === ancestorId || p.motherId === ancestorId) return true;
+    if (p.fatherId) queue.push(p.fatherId);
+    if (p.motherId) queue.push(p.motherId);
+  }
+  return false;
+}
+
+// يمنع إنشاء حلقة نسب مستحيلة (مثال: ربط حفيد كوالد لجدّه) عند ربط شخص موجود
+// كأب/أم/ابن لشخص آخر — يُستخدم في السحب والإفلات وفي بحث "ربط شخص موجود".
+export function wouldCreateCycle(people: Record<string, Person>, childId: string, newParentId: string): boolean {
+  if (childId === newParentId) return true;
+  return hasAncestor(people, newParentId, childId);
+}
+
+// بحث نصي بسيط (يشمل الاسم واسم الأب والعائلة) لإيجاد شخص موجود بالفعل في
+// الشجرة لربطه، بدل إضافته من جديد مكررًا. مستقل عن similarPeople (التي تعمل
+// فقط أثناء تعبئة نموذج شخص جديد وتتطلب تطابقًا قويًا في الاسم).
+export function searchPeopleByName(people: Record<string, Person>, query: string, excludeId?: string | null): Person[] {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  return peopleList(people)
+    .filter((p) => p.id !== excludeId)
+    .filter((p) => `${p.givenName} ${p.fatherName} ${p.familyName} ${fullName(p)}`.includes(q))
+    .sort((a, b) => a.givenName.localeCompare(b.givenName, "ar"))
+    .slice(0, 8);
+}
+
 export function lineageHint(people: Record<string, Person>, person: Person): string {
   const father = person.fatherId ? people[person.fatherId] : null;
   const mother = person.motherId ? people[person.motherId] : null;
