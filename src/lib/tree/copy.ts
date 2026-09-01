@@ -127,6 +127,7 @@ export const copy = {
   confirmUnlinkSpouse: (name: string) => `هل تفصل رابط الزواج مع ${name}؟ لا يُحذف أي منكما، فقط تُزال رابطة الزوجية الخاطئة بينكما.`,
   unlinkedSpouse: "فُصل رابط الزواج",
   removeParentLink: "إزالة",
+  changeParentLink: "تغيير",
   confirmUnlinkChild: (childName: string, parentName: string) =>
     `هل تفصل القرابة بين ${childName} و${parentName}؟ لا يُحذف أي منهما، فقط تُزال رابطة الأبوة/الأمومة الخاطئة — وتقدر تربط الوالد أو الابن الصحيح بعدين.`,
   unlinkedChild: "فُصلت القرابة",
