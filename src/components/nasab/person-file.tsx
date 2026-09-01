@@ -197,35 +197,53 @@ function FileActions({ person }: { person: Person }) {
             {person.fatherId && people[person.fatherId] ? (
               <li className="flex items-center justify-between gap-2">
                 <RelLink id={person.fatherId} label={`${copy.fatherOf} ${fullName(people[person.fatherId]!)}`} />
-                <button
-                  type="button"
-                  className="shrink-0 text-xs font-medium text-muted hover:text-danger hover:underline"
-                  onClick={() => {
-                    const father = people[person.fatherId!]!;
-                    if (!window.confirm(copy.confirmUnlinkChild(fullName(person), fullName(father)))) return;
-                    unlinkChild(person.id, father.id);
-                    toast.success(copy.unlinkedChild);
-                  }}
-                >
-                  {copy.removeParentLink}
-                </button>
+                <span className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-muted hover:text-ink hover:underline"
+                    onClick={() => openDialog("add-father", person.id)}
+                  >
+                    {copy.changeParentLink}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-muted hover:text-danger hover:underline"
+                    onClick={() => {
+                      const father = people[person.fatherId!]!;
+                      if (!window.confirm(copy.confirmUnlinkChild(fullName(person), fullName(father)))) return;
+                      unlinkChild(person.id, father.id);
+                      toast.success(copy.unlinkedChild);
+                    }}
+                  >
+                    {copy.removeParentLink}
+                  </button>
+                </span>
               </li>
             ) : null}
             {person.motherId && people[person.motherId] ? (
               <li className="flex items-center justify-between gap-2">
                 <RelLink id={person.motherId} label={`${copy.motherOf} ${fullName(people[person.motherId]!)}`} />
-                <button
-                  type="button"
-                  className="shrink-0 text-xs font-medium text-muted hover:text-danger hover:underline"
-                  onClick={() => {
-                    const mother = people[person.motherId!]!;
-                    if (!window.confirm(copy.confirmUnlinkChild(fullName(person), fullName(mother)))) return;
-                    unlinkChild(person.id, mother.id);
-                    toast.success(copy.unlinkedChild);
-                  }}
-                >
-                  {copy.removeParentLink}
-                </button>
+                <span className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-muted hover:text-ink hover:underline"
+                    onClick={() => openDialog("add-mother", person.id)}
+                  >
+                    {copy.changeParentLink}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-muted hover:text-danger hover:underline"
+                    onClick={() => {
+                      const mother = people[person.motherId!]!;
+                      if (!window.confirm(copy.confirmUnlinkChild(fullName(person), fullName(mother)))) return;
+                      unlinkChild(person.id, mother.id);
+                      toast.success(copy.unlinkedChild);
+                    }}
+                  >
+                    {copy.removeParentLink}
+                  </button>
+                </span>
               </li>
             ) : null}
           </ul>
