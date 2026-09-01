@@ -3,7 +3,7 @@ import type { Person, TreeData } from "./types";
 function p(
   partial: Omit<
     Person,
-    "countryCode" | "photoId" | "photoScale" | "photoSize" | "photoX" | "photoY" | "houseHead" | "wifeKind" | "burialPlace" | "burialGps" | "documents" | "spouseIds"
+    "countryCode" | "photoId" | "photoScale" | "photoSize" | "photoX" | "photoY" | "houseHead" | "wifeKind" | "burialPlace" | "burialGps" | "documents" | "spouseIds" | "grandfatherName" | "greatGrandfatherName" | "kunya" | "deceased" | "birthOrder"
   > &
     Partial<Person>,
 ): Person {
@@ -14,6 +14,11 @@ function p(
     burialPlace: "",
     burialGps: "",
     documents: [],
+    grandfatherName: partial.grandfatherName ?? "",
+    greatGrandfatherName: partial.greatGrandfatherName ?? "",
+    kunya: partial.kunya ?? "",
+    deceased: partial.deceased ?? Boolean(partial.deathDate),
+    birthOrder: partial.birthOrder ?? 0,
     ...partial,
     photoScale: partial.photoScale ?? 1,
     photoSize: partial.photoSize ?? "md",
