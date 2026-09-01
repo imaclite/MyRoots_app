@@ -124,6 +124,8 @@ export function AddKinDialog() {
       return emptyDraft({
         gender: kind === "add-sister" ? "female" : "male",
         fatherName: target.fatherName,
+        grandfatherName: target.grandfatherName,
+        greatGrandfatherName: target.greatGrandfatherName,
         familyName: target.familyName,
         birthPlace: target.birthPlace,
         residence: target.residence,
@@ -141,6 +143,8 @@ export function AddKinDialog() {
       return emptyDraft({
         gender: "male",
         givenName: target.fatherName,
+        fatherName: target.grandfatherName,
+        grandfatherName: target.greatGrandfatherName,
         familyName: target.familyName,
         countryCode: target.countryCode,
       });
