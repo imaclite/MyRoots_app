@@ -37,6 +37,7 @@ export function SidePanels() {
 function PeoplePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const people = useTreeStore((s) => s.people);
   const openFile = useTreeStore((s) => s.openFile);
+  const fileId = useTreeStore((s) => s.fileId);
   const [q, setQ] = useState("");
   const list = useMemo(() => {
     const all = peopleList(people).sort((a, b) => fullName(a).localeCompare(fullName(b), "ar"));
@@ -45,8 +46,13 @@ function PeoplePanel({ open, onClose }: { open: boolean; onClose: () => void }) 
     return all.filter((p) => fullName(p).includes(query) || p.givenName.includes(query));
   }, [people, q]);
 
+  // تبقى نافذة البحث "مفتوحة" منطقيًا (وتحافظ على نص البحث والنتائج) حتى لو
+  // فُتح ملف شخص من نتائجها — فقط تختفي بصريًا خلف ملف الشخص، وتظهر من جديد
+  // فور إغلاقه، بدل إغلاقها كليًا. هذا يسهّل مراجعة عدة نتائج متتالية (كأسماء
+  // مكررة) دون إعادة كتابة البحث في كل مرة. تُغلق فعليًا فقط بزر الإغلاق ‏×‏
+  // أو بالضغط خارج النافذة.
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open && !fileId} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{copy.people}</DialogTitle>
@@ -64,7 +70,6 @@ function PeoplePanel({ open, onClose }: { open: boolean; onClose: () => void }) 
                 className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-right hover:bg-cream-deep/70"
                 onClick={() => {
                   openFile(p.id);
-                  onClose();
                 }}
               >
                 <span
