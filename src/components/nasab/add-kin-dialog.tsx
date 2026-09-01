@@ -9,9 +9,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { copy } from "@/lib/tree/copy";
 import { emptyDraft, fullName, inheritChildNames } from "@/lib/tree/format";
-import { canAddWife, currentWifeCount, nextSpouseTitle, spouseRankLabel, spousesOf, wifeOrdinal } from "@/lib/tree/graph";
+import {
+  canAddWife,
+  currentWifeCount,
+  lineageHint,
+  nextSpouseTitle,
+  searchPeopleByName,
+  spouseRankLabel,
+  spousesOf,
+  wifeOrdinal,
+} from "@/lib/tree/graph";
 import { compressImage, putMedia } from "@/lib/tree/media";
 import { useTreeStore } from "@/lib/tree/store";
 import type { DialogKind } from "@/lib/tree/store";
@@ -144,6 +154,7 @@ export function AddKinDialog() {
   const [resetKey, setResetKey] = useState(0);
   const [photo, setPhoto] = useState<File | null>(null);
   const [grave, setGrave] = useState<File | null>(null);
+  const [existingQuery, setExistingQuery] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -152,9 +163,15 @@ export function AddKinDialog() {
     setPhoto(null);
     setGrave(null);
     setResetKey((k) => k + 1);
+    setExistingQuery("");
     // Reset only when opening or switching ابن/ابنة — not after each حفظ.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, kind, targetId]);
+
+  const existingMatches = useMemo(
+    () => (target ? searchPeopleByName(people, existingQuery, target.id) : []),
+    [people, existingQuery, target],
+  );
 
   useEffect(() => {
     if (open) setAdded(0);
@@ -208,11 +225,16 @@ export function AddKinDialog() {
 
   const pickExisting = (person: Person) => {
     if (!target) return;
-    if (kind === "add-son" || kind === "add-daughter") linkExistingChild(target.id, person.id, otherId);
+    let ok = true;
+    if (kind === "add-son" || kind === "add-daughter") ok = linkExistingChild(target.id, person.id, otherId);
     else if (kind === "add-spouse") linkExistingSpouse(target.id, person.id);
-    else if (kind === "add-father") linkExistingParent(target.id, person.id, "father");
-    else if (kind === "add-mother") linkExistingParent(target.id, person.id, "mother");
-    else linkExistingSibling(target.id, person.id);
+    else if (kind === "add-father") ok = linkExistingParent(target.id, person.id, "father");
+    else if (kind === "add-mother") ok = linkExistingParent(target.id, person.id, "mother");
+    else ok = linkExistingSibling(target.id, person.id);
+    if (!ok) {
+      toast.error(copy.linkExistingBlocked);
+      return;
+    }
     toast.success(copy.linkedExisting);
     closeDialog();
   };
@@ -259,6 +281,37 @@ export function AddKinDialog() {
               </button>
             );
           })}
+        </div>
+
+        <div className="space-y-2 rounded-xl bg-cream px-3 py-3">
+          <p className="text-sm font-medium text-ink">{copy.linkExistingSearchLabel}</p>
+          <p className="text-xs text-muted">{copy.linkExistingSearchHint}</p>
+          <Input
+            value={existingQuery}
+            onChange={(e) => setExistingQuery(e.target.value)}
+            placeholder={copy.linkExistingSearchPlaceholder}
+            autoComplete="off"
+          />
+          {existingQuery.trim().length >= 2 ? (
+            existingMatches.length ? (
+              <ul className="space-y-1">
+                {existingMatches.map((p) => (
+                  <li key={p.id} className="flex items-start justify-between gap-2 rounded-lg bg-paper px-2 py-1.5">
+                    <span className="min-w-0 text-xs leading-5 text-ink">{lineageHint(people, p)}</span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-medium text-male hover:underline"
+                      onClick={() => pickExisting(p)}
+                    >
+                      {copy.linkExistingButton}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted">{copy.linkExistingNoResults}</p>
+            )
+          ) : null}
         </div>
 
         {kind === "add-spouse" && target?.gender === "male" ? (
