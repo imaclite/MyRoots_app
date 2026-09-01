@@ -69,7 +69,10 @@ type Store = {
   addChild: (parentId: string, draft: PersonDraft, otherParentId: string | null) => string;
   linkExistingChild: (parentId: string, childId: string, otherParentId: string | null) => boolean;
   linkExistingSpouse: (personId: string, spouseId: string) => void;
+  unlinkSpouse: (personId: string, spouseId: string) => void;
+  reorderChild: (childId: string, siblingIds: string[], direction: "up" | "down") => void;
   linkExistingParent: (childId: string, parentId: string, which: "father" | "mother") => boolean;
+  unlinkChild: (childId: string, parentId: string) => void;
   addSpouse: (personId: string, draft: PersonDraft) => string;
   addParent: (childId: string, which: "father" | "mother", draft: PersonDraft) => string;
   addSibling: (personId: string, draft: PersonDraft) => string;
@@ -123,12 +126,16 @@ function fromDraft(id: string, draft: PersonDraft): Person {
     id,
     givenName: draft.givenName.trim(),
     fatherName: draft.fatherName.trim(),
+    grandfatherName: draft.grandfatherName.trim(),
+    greatGrandfatherName: draft.greatGrandfatherName.trim(),
+    kunya: draft.kunya.trim(),
     familyName: draft.familyName.trim(),
     gender: draft.gender,
     birthDate: draft.birthDate,
     birthPlace: draft.birthPlace.trim(),
     deathDate: draft.deathDate,
     deathPlace: draft.deathPlace.trim(),
+    deceased: Boolean(draft.deceased) || Boolean(draft.deathDate),
     residence: draft.residence.trim(),
     occupation: draft.occupation.trim(),
     notes: draft.notes.trim(),
@@ -147,6 +154,7 @@ function fromDraft(id: string, draft: PersonDraft): Person {
     spouseIds: [],
     houseHead: Boolean(draft.houseHead),
     wifeKind: draft.deathDate || draft.wifeKind === "deceased" ? "deceased" : draft.wifeKind === "previous" ? "previous" : "current",
+    birthOrder: 0,
   };
 }
 
@@ -319,6 +327,46 @@ export const useTreeStore = create<Store>((set, get) => {
       commit({ people: next, focusId: get().focusId }, "زوج", fullName(spouse));
     },
 
+    // يفصل رابط زوجية خاطئ بين شخصين دون المساس بأي شيء آخر عندهما (لا يحذف
+    // أيًّا منهما، ولا يمس والدَي/أبناء أي منهما — فقط يزيل معرّف كل واحد من
+    // قائمة أزواج الآخر). يُستخدم لتصحيح روابط زواج خاطئة (كخطأ في استخراج
+    // الأزواج من نص قديم) دون فقدان أي بيانات صحيحة أخرى لذلك الشخص.
+    unlinkSpouse: (personId, spouseId) => {
+      const { people } = get();
+      const person = people[personId];
+      const spouse = people[spouseId];
+      if (!person || !spouse || personId === spouseId) return;
+      const next = clonePeople(people);
+      const personSpouseIds = spouseIdList(person).filter((id) => id !== spouseId);
+      const spouseSpouseIds = spouseIdList(spouse).filter((id) => id !== personId);
+      next[personId] = { ...person, spouseIds: personSpouseIds, spouseId: personSpouseIds[0] ?? null };
+      next[spouseId] = { ...spouse, spouseIds: spouseSpouseIds, spouseId: spouseSpouseIds[0] ?? null };
+      commit({ people: next, focusId: get().focusId }, "فصل زواج", fullName(spouse));
+    },
+
+    // يحرّك ابنًا واحدًا فوق أو تحت ضمن قائمة إخوته المعروضة فعليًا في نفس
+    // الواجهة (siblingIds بنفس الترتيب الظاهر)، ثم يثبّت هذا الترتيب الجديد
+    // على كل إخوة تلك القائمة (birthOrder تصاعديًا من ١) — لا يحتاج تاريخ
+    // ميلاد معروف، فقط "مين أكبر من مين" حسب معرفة المستخدم بالعائلة.
+    reorderChild: (childId, siblingIds, direction) => {
+      const { people } = get();
+      const index = siblingIds.indexOf(childId);
+      if (index === -1) return;
+      const swapWith = direction === "up" ? index - 1 : index + 1;
+      if (swapWith < 0 || swapWith >= siblingIds.length) return;
+      const nextOrder = [...siblingIds];
+      const tmp = nextOrder[index]!;
+      nextOrder[index] = nextOrder[swapWith]!;
+      nextOrder[swapWith] = tmp;
+      const next = clonePeople(people);
+      nextOrder.forEach((id, i) => {
+        const p = next[id];
+        if (p) next[id] = { ...p, birthOrder: i + 1 };
+      });
+      const moved = people[childId];
+      commit({ people: next, focusId: get().focusId }, "ترتيب", moved ? fullName(moved) : "");
+    },
+
     linkExistingParent: (childId, parentId, which) => {
       const { people } = get();
       const child = people[childId];
@@ -340,6 +388,28 @@ export const useTreeStore = create<Store>((set, get) => {
       }
       commit({ people: next, focusId: get().focusId }, which === "father" ? "والد" : "والدة", fullName(parent));
       return true;
+    },
+
+    // يفصل رابط أبوة/أمومة خاطئ بين طفل ووالده دون حذف أي منهما — يزيل فقط
+    // الجهة المطابقة (fatherId أو motherId) على الطفل، بلا مساس بأي رابط آخر
+    // عنده (زوج/زوجة، أبناء أخرون). يُستخدم من داخل ملف الطفل (زر "إزالة"
+    // بجانب اسم الأب/الأم) أو من داخل ملف الوالد (زر "إزالة" بجانب كل ابن في
+    // قائمة الأبناء) — نفس الإجراء يخدم الحالتين لأنه يحدد الجهة تلقائيًا.
+    // بعد الفصل تعود أزرار "إضافة أب/أم" و"ربط شخص موجود" متاحة من جديد
+    // لربط الوالد الصحيح.
+    unlinkChild: (childId, parentId) => {
+      const { people } = get();
+      const child = people[childId];
+      const parent = people[parentId];
+      if (!child || !parent) return;
+      if (child.fatherId !== parentId && child.motherId !== parentId) return;
+      const next = clonePeople(people);
+      next[childId] = {
+        ...child,
+        fatherId: child.fatherId === parentId ? null : child.fatherId,
+        motherId: child.motherId === parentId ? null : child.motherId,
+      };
+      commit({ people: next, focusId: get().focusId }, "فصل نسب", fullName(child));
     },
 
     addSpouse: (personId, draft) => {
@@ -403,6 +473,8 @@ export const useTreeStore = create<Store>((set, get) => {
       sibling.motherId = person.motherId;
       if (!sibling.familyName) sibling.familyName = person.familyName;
       if (!sibling.fatherName) sibling.fatherName = person.fatherName;
+      if (!sibling.grandfatherName) sibling.grandfatherName = person.grandfatherName;
+      if (!sibling.greatGrandfatherName) sibling.greatGrandfatherName = person.greatGrandfatherName;
       const next = clonePeople(people);
       next[id] = sibling;
       commit({ people: next, focusId: get().focusId }, sibling.gender === "female" ? "أخت" : "أخ", fullName(sibling));
@@ -447,12 +519,16 @@ export const useTreeStore = create<Store>((set, get) => {
         ...prev,
         givenName: draft.givenName.trim(),
         fatherName: draft.fatherName.trim(),
+        grandfatherName: draft.grandfatherName.trim(),
+        greatGrandfatherName: draft.greatGrandfatherName.trim(),
+        kunya: draft.kunya.trim(),
         familyName: draft.familyName.trim(),
         gender: draft.gender,
         birthDate: draft.birthDate,
         birthPlace: draft.birthPlace.trim(),
         deathDate: draft.deathDate,
         deathPlace: draft.deathPlace.trim(),
+        deceased: Boolean(draft.deceased) || Boolean(draft.deathDate),
         residence: draft.residence.trim(),
         occupation: draft.occupation.trim(),
         notes: draft.notes.trim(),
