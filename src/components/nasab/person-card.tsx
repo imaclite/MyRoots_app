@@ -1,6 +1,6 @@
 import { memo, useRef } from "react";
 import { copy } from "@/lib/tree/copy";
-import { formatEvent, fullName, initials } from "@/lib/tree/format";
+import { deathLine, formatEvent, fullName, initials } from "@/lib/tree/format";
 import { useHouseHeadLabel } from "@/lib/tree/house-head-label";
 import type { LayoutNode, Person } from "@/lib/tree/types";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,7 @@ export const PersonCard = memo(function PersonCard({
 }: Props) {
   const female = person.gender === "female";
   const born = formatEvent(copy.bornAbbr, person.birthDate, person.birthPlace);
-  const died = formatEvent(copy.diedAbbr, person.deathDate, person.deathPlace);
+  const died = deathLine(copy.diedAbbr, copy.deceased, person);
   const photo = useMediaUrl(person.photoId);
   const [houseHeadLabel] = useHouseHeadLabel();
 
