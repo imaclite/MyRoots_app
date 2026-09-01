@@ -183,8 +183,6 @@ export function AddKinDialog() {
 
   const switchKind = (next: KinKind) => {
     if (!target) return;
-    if (next === "add-father" && target.fatherId) return;
-    if (next === "add-mother" && target.motherId) return;
     openDialog(next, target.id);
   };
 
@@ -265,26 +263,19 @@ export function AddKinDialog() {
         </DialogHeader>
 
         <div className="flex flex-wrap justify-end gap-1.5">
-          {KIN_KINDS.map((k) => {
-            const disabled =
-              Boolean(k === "add-father" && target?.fatherId) ||
-              Boolean(k === "add-mother" && target?.motherId);
-            return (
-              <button
-                key={k}
-                type="button"
-                disabled={disabled}
-                onClick={() => switchKind(k)}
-                className={cn(
-                  "h-8 rounded-full px-3 text-xs font-medium",
-                  kind === k ? "bg-chip text-cream" : "bg-paper text-ink-soft shadow-[0_0_0_1px_rgba(28,33,28,0.1)]",
-                  disabled && "opacity-40",
-                )}
-              >
-                {PILL_LABEL[k]}
-              </button>
-            );
-          })}
+          {KIN_KINDS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => switchKind(k)}
+              className={cn(
+                "h-8 rounded-full px-3 text-xs font-medium",
+                kind === k ? "bg-chip text-cream" : "bg-paper text-ink-soft shadow-[0_0_0_1px_rgba(28,33,28,0.1)]",
+              )}
+            >
+              {PILL_LABEL[k]}
+            </button>
+          ))}
         </div>
 
         <div className="space-y-2 rounded-xl bg-cream px-3 py-3">
