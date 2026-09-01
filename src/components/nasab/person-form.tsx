@@ -103,6 +103,7 @@ export function PersonForm({
           </ul>
         </div>
       ) : null}
+      <LineageExtraFields formId={formId} value={value} set={set} />
       <Field id={`${formId}-family`} label={copy.familyName}>
         <Input
           id={`${formId}-family`}
@@ -215,6 +216,21 @@ export function PersonForm({
           onChange={(e) => set({ deathPlace: e.target.value })}
         />
       </Field>
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-cream px-3 py-3 sm:col-span-2">
+        <input
+          type="checkbox"
+          className="mt-1 size-4 accent-[var(--color-chip)]"
+          checked={Boolean(value.deceased) || value.deathDate.length === 10}
+          disabled={value.deathDate.length === 10}
+          onChange={(e) => set({ deceased: e.target.checked })}
+        />
+        <span>
+          <span className="block text-sm font-medium text-ink">{copy.markDeceased}</span>
+          <span className="text-xs text-muted">
+            {value.deathDate.length === 10 ? copy.deceasedFromDateHint : copy.deceasedHint}
+          </span>
+        </span>
+      </label>
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor={`${formId}-notes`}>{copy.notes}</Label>
         <Textarea
@@ -291,6 +307,73 @@ function WifeKindFields({
       </div>
       {value.wifeKind === "previous" ? <p className="text-xs text-muted">{copy.previousWifeHint}</p> : null}
       {value.wifeKind === "deceased" ? <p className="text-xs text-muted">{copy.previousDeceasedHint}</p> : null}
+    </div>
+  );
+}
+
+function LineageExtraFields({
+  formId,
+  value,
+  set,
+}: {
+  formId: string;
+  value: PersonDraft;
+  set: (patch: Partial<PersonDraft>) => void;
+}) {
+  const hasData = Boolean(value.grandfatherName || value.greatGrandfatherName || value.kunya);
+  const [open, setOpen] = useState(hasData);
+
+  if (!open) {
+    return (
+      <div className="sm:col-span-2">
+        <button
+          type="button"
+          className="text-xs text-muted hover:text-ink-soft hover:underline"
+          onClick={() => setOpen(true)}
+        >
+          {copy.moreLineage} — {copy.showOptional}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 sm:col-span-2 rounded-lg bg-cream/70 px-3 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-ink-soft">{copy.moreLineage}</p>
+        <button type="button" className="text-xs text-muted hover:underline" onClick={() => setOpen(false)}>
+          {copy.hideOptional}
+        </button>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field id={`${formId}-grandfather`} label={copy.grandfatherName}>
+          <Input
+            id={`${formId}-grandfather`}
+            value={value.grandfatherName}
+            autoComplete="off"
+            onChange={(e) => set({ grandfatherName: e.target.value })}
+          />
+        </Field>
+        <Field id={`${formId}-greatgrandfather`} label={copy.greatGrandfatherName}>
+          <Input
+            id={`${formId}-greatgrandfather`}
+            value={value.greatGrandfatherName}
+            autoComplete="off"
+            onChange={(e) => set({ greatGrandfatherName: e.target.value })}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field id={`${formId}-kunya`} label={copy.kunya}>
+            <Input
+              id={`${formId}-kunya`}
+              value={value.kunya}
+              autoComplete="off"
+              placeholder="مثال: أبو جاسم"
+              onChange={(e) => set({ kunya: e.target.value })}
+            />
+          </Field>
+        </div>
+      </div>
     </div>
   );
 }
