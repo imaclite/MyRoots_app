@@ -31,12 +31,16 @@ export type Person = {
   id: string;
   givenName: string;
   fatherName: string;
+  grandfatherName: string;
+  greatGrandfatherName: string;
+  kunya: string;
   familyName: string;
   gender: Gender;
   birthDate: string;
   birthPlace: string;
   deathDate: string;
   deathPlace: string;
+  deceased: boolean;
   residence: string;
   occupation: string;
   notes: string;
@@ -55,6 +59,7 @@ export type Person = {
   spouseIds: string[];
   houseHead: boolean;
   wifeKind: WifeKind;
+  birthOrder: number;
 };
 
 export type TreeData = {
@@ -68,12 +73,16 @@ export type TreeData = {
 export type PersonDraft = {
   givenName: string;
   fatherName: string;
+  grandfatherName: string;
+  greatGrandfatherName: string;
+  kunya: string;
   familyName: string;
   gender: Gender;
   birthDate: string;
   birthPlace: string;
   deathDate: string;
   deathPlace: string;
+  deceased: boolean;
   residence: string;
   occupation: string;
   notes: string;
