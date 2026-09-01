@@ -138,12 +138,16 @@ export function toGedcom(data: TreeData, filename = "nasab.ged"): string {
     if (p.familyName.trim()) push(lines, 2, "SURN", p.familyName.trim());
     push(lines, 1, "SEX", p.gender === "female" ? "F" : "M");
     push(lines, 1, "REFN", p.id);
+    if (p.grandfatherName.trim()) push(lines, 1, "_GRANDFATHER", p.grandfatherName.trim());
+    if (p.greatGrandfatherName.trim()) push(lines, 1, "_GREATGRANDFATHER", p.greatGrandfatherName.trim());
+    if (p.kunya.trim()) push(lines, 1, "_KUNYA", p.kunya.trim());
+    if (p.birthOrder) push(lines, 1, "_BIRTHORDER", String(p.birthOrder));
     if (p.birthDate || p.birthPlace) {
       push(lines, 1, "BIRT");
       if (p.birthDate) push(lines, 2, "DATE", toGedcomDate(p.birthDate));
       if (p.birthPlace) push(lines, 2, "PLAC", p.birthPlace);
     }
-    if (p.deathDate || p.deathPlace) {
+    if (p.deathDate || p.deathPlace || p.deceased) {
       push(lines, 1, "DEAT");
       if (p.deathDate) push(lines, 2, "DATE", toGedcomDate(p.deathDate));
       if (p.deathPlace) push(lines, 2, "PLAC", p.deathPlace);
@@ -248,12 +252,16 @@ function blankPerson(id: string): Person {
     id,
     givenName: "",
     fatherName: "",
+    grandfatherName: "",
+    greatGrandfatherName: "",
+    kunya: "",
     familyName: "",
     gender: "male",
     birthDate: "",
     birthPlace: "",
     deathDate: "",
     deathPlace: "",
+    deceased: false,
     residence: "",
     occupation: "",
     notes: "",
@@ -272,6 +280,7 @@ function blankPerson(id: string): Person {
     spouseIds: [],
     houseHead: false,
     wifeKind: "current",
+    birthOrder: 0,
   };
 }
 
@@ -321,6 +330,10 @@ export function fromGedcom(text: string): TreeData {
     const person = blankPerson(id);
     person.givenName = names.givenName;
     person.fatherName = names.fatherName;
+    person.grandfatherName = childVal(rec, "_GRANDFATHER");
+    person.greatGrandfatherName = childVal(rec, "_GREATGRANDFATHER");
+    person.kunya = childVal(rec, "_KUNYA");
+    person.birthOrder = Number(childVal(rec, "_BIRTHORDER")) || 0;
     person.familyName = names.familyName;
     person.gender = sex === "F" ? "female" : "male";
     if (birt) {
@@ -330,6 +343,7 @@ export function fromGedcom(text: string): TreeData {
     if (deat) {
       person.deathDate = fromGedcomDate(childVal(deat, "DATE"));
       person.deathPlace = childVal(deat, "PLAC");
+      person.deceased = true;
     }
     if (buri) {
       person.burialPlace = childVal(buri, "PLAC");
