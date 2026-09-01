@@ -12,6 +12,14 @@ export function childrenOf(people: Record<string, Person>, id: string): Person[]
 }
 
 export function byBirthThenName(a: Person, b: Person): number {
+  // ترتيب يدوي (الأكبر فوق) له الأولوية إن وُجد — مفيد لأن أغلب الأشخاص هنا
+  // بلا تاريخ ميلاد مسجَّل. من رتّب يدويًا (birthOrder > 0) يظهر قبل من لم
+  // يُرتَّب بعد، ثم يُستخدم تاريخ الميلاد فالاسم كما كان سابقًا.
+  const oa = a.birthOrder || 0;
+  const ob = b.birthOrder || 0;
+  if (oa && ob && oa !== ob) return oa - ob;
+  if (oa && !ob) return -1;
+  if (!oa && ob) return 1;
   const da = a.birthDate || "9999";
   const db = b.birthDate || "9999";
   if (da !== db) return da.localeCompare(db);
@@ -280,13 +288,21 @@ export function unlinkPerson(people: Record<string, Person>, id: string): Record
 
 export function similarPeople(
   people: Record<string, Person>,
-  draft: { givenName: string; fatherName: string; familyName: string },
+  draft: {
+    givenName: string;
+    fatherName: string;
+    familyName: string;
+    grandfatherName?: string;
+    greatGrandfatherName?: string;
+  },
   excludeId?: string | null,
 ): Person[] {
   const g = draft.givenName.trim();
   if (g.length < 2) return [];
   const father = draft.fatherName.trim();
   const family = draft.familyName.trim();
+  const grandfather = (draft.grandfatherName ?? "").trim();
+  const greatGrandfather = (draft.greatGrandfatherName ?? "").trim();
   return peopleList(people)
     .filter((p) => p.id !== excludeId)
     .map((p) => {
@@ -298,6 +314,8 @@ export function similarPeople(
       if (father && p.fatherName === father) score += 3;
       else if (father && (p.fatherName.includes(father) || father.includes(p.fatherName))) score += 1;
       if (family && p.familyName === family) score += 2;
+      if (grandfather && p.grandfatherName === grandfather) score += 2;
+      if (greatGrandfather && p.greatGrandfatherName === greatGrandfather) score += 1;
       return { p, score };
     })
     .filter((row) => row.score >= 2)
@@ -339,7 +357,7 @@ export function searchPeopleByName(people: Record<string, Person>, query: string
   if (q.length < 2) return [];
   return peopleList(people)
     .filter((p) => p.id !== excludeId)
-    .filter((p) => `${p.givenName} ${p.fatherName} ${p.familyName} ${fullName(p)}`.includes(q))
+    .filter((p) => `${p.givenName} ${p.fatherName} ${p.familyName} ${p.kunya} ${fullName(p)}`.includes(q))
     .sort((a, b) => a.givenName.localeCompare(b.givenName, "ar"))
     .slice(0, 8);
 }
