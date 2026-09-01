@@ -22,9 +22,12 @@ export function easternDigits(value: string): string {
   return value.replace(/[0-9]/g, (d) => EASTERN[Number(d)] ?? d);
 }
 
-export function fullName(person: Pick<Person, "givenName" | "fatherName" | "familyName">): string {
-  return [person.givenName, person.fatherName, person.familyName]
-    .map((part) => part.trim())
+export function fullName(
+  person: Pick<Person, "givenName" | "fatherName" | "familyName"> &
+    Partial<Pick<Person, "grandfatherName" | "greatGrandfatherName">>,
+): string {
+  return [person.givenName, person.fatherName, person.grandfatherName, person.greatGrandfatherName, person.familyName]
+    .map((part) => (part ?? "").trim())
     .filter(Boolean)
     .join(" ");
 }
@@ -59,20 +62,36 @@ export function formatEvent(abbr: string, date: string, place: string): string {
   return `${abbr} ${place}`;
 }
 
-export function isDeceased(person: Pick<Person, "deathDate">): boolean {
-  return Boolean(person.deathDate);
+export function isDeceased(person: Pick<Person, "deathDate" | "deceased">): boolean {
+  return Boolean(person.deathDate) || Boolean(person.deceased);
+}
+
+// نص حالة الوفاة المعروض في البطاقة/الملف: يعرض التاريخ/المكان إن وُجد، وإلا
+// يعرض كلمة "متوفى" فقط إذا كان الشخص مؤشَّرًا كمتوفى دون تاريخ معروف.
+export function deathLine(
+  abbr: string,
+  deceasedLabel: string,
+  person: Pick<Person, "deathDate" | "deathPlace" | "deceased">,
+): string {
+  const event = formatEvent(abbr, person.deathDate, person.deathPlace);
+  if (event) return event;
+  return person.deceased ? deceasedLabel : "";
 }
 
 export function emptyDraft(overrides: Partial<PersonDraft> = {}): PersonDraft {
   return {
     givenName: "",
     fatherName: "",
+    grandfatherName: "",
+    greatGrandfatherName: "",
+    kunya: "",
     familyName: "",
     gender: "male",
     birthDate: "",
     birthPlace: "",
     deathDate: "",
     deathPlace: "",
+    deceased: false,
     residence: "",
     occupation: "",
     notes: "",
@@ -93,12 +112,16 @@ export function personToDraft(person: Person): PersonDraft {
   return {
     givenName: person.givenName,
     fatherName: person.fatherName,
+    grandfatherName: person.grandfatherName ?? "",
+    greatGrandfatherName: person.greatGrandfatherName ?? "",
+    kunya: person.kunya ?? "",
     familyName: person.familyName,
     gender: person.gender,
     birthDate: person.birthDate,
     birthPlace: person.birthPlace,
     deathDate: person.deathDate,
     deathPlace: person.deathPlace,
+    deceased: Boolean(person.deceased),
     residence: person.residence,
     occupation: person.occupation,
     notes: person.notes,
@@ -117,11 +140,13 @@ export function personToDraft(person: Person): PersonDraft {
 export function inheritChildNames(
   parent: Person,
   otherParent: Person | null,
-): Pick<PersonDraft, "fatherName" | "familyName"> {
+): Pick<PersonDraft, "fatherName" | "grandfatherName" | "greatGrandfatherName" | "familyName"> {
   const father = parent.gender === "male" ? parent : otherParent;
   const source = father ?? parent;
   return {
     fatherName: source.givenName,
+    grandfatherName: source.fatherName,
+    greatGrandfatherName: source.grandfatherName ?? "",
     familyName: source.familyName,
   };
 }
